@@ -2,43 +2,35 @@ from survey import Survey
 from geometry import Geometry
 
 survey = Survey(
-
     width=15840,
     height=15840,
 
     receiver_interval=165,
     receiver_line_spacing=550,
-    receiver_lines_active=12,
-    receiver_lines_spare=1,
+    receiver_lines=13,
 
     source_interval=220,
-    source_line_spacing=660,
-
-    target_depth=5500
+    source_line_spacing=660
 )
 
 geometry = Geometry(survey)
 
-rx, ry = geometry.build_receivers()
-
-sx, sy = geometry.build_sources()
-
-print()
-
-print("Receiver nodes:", len(rx))
-
-print("Shot points:", len(sx))
+rx, ry = geometry.generate_receivers()
+sx, sy = geometry.generate_sources()
 
 print()
-
-print("First five receivers")
-
-for i in range(5):
-    print(rx[i], ry[i])
+print("===== Survey Summary =====")
+print(f"Receiver nodes : {len(rx):,}")
+print(f"Shot points    : {len(sx):,}")
 
 print()
+print("First 10 receiver locations")
 
-print("First five shots")
+for i in range(10):
+    print(f"{i+1:2d}: ({rx[i]:7.1f}, {ry[i]:7.1f})")
 
-for i in range(5):
-    print(sx[i], sy[i])
+print()
+print("First 10 shot locations")
+
+for i in range(10):
+    print(f"{i+1:2d}: ({sx[i]:7.1f}, {sy[i]:7.1f})")

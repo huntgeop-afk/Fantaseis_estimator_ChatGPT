@@ -1,44 +1,43 @@
 import numpy as np
 
+
 class Geometry:
 
     def __init__(self, survey):
         self.survey = survey
 
-    def build_receivers(self):
+    def generate_receivers(self):
 
-        s = self.survey
-
-        total_lines = s.receiver_lines_active + s.receiver_lines_spare
-
-        x = np.arange(
+        xs = np.arange(
             0,
-            s.width + s.receiver_interval,
-            s.receiver_interval
+            self.survey.width + self.survey.receiver_interval,
+            self.survey.receiver_interval
         )
 
-        y = np.arange(total_lines) * s.receiver_line_spacing
+        ys = np.arange(
+            0,
+            self.survey.receiver_lines * self.survey.receiver_line_spacing,
+            self.survey.receiver_line_spacing
+        )
 
-        X, Y = np.meshgrid(x, y)
+        X, Y = np.meshgrid(xs, ys)
 
         return X.flatten(), Y.flatten()
 
-    def build_sources(self):
+    def generate_sources(self):
 
-        s = self.survey
-
-        x = np.arange(
+        xs = np.arange(
             0,
-            s.width + s.source_line_spacing,
-            s.source_line_spacing
+            self.survey.width + self.survey.source_line_spacing,
+            self.survey.source_line_spacing
         )
 
-        y = np.arange(
+        ys = np.arange(
             0,
-            s.height + s.source_interval,
-            s.source_interval
+            self.survey.height + self.survey.source_interval,
+            self.survey.source_interval
         )
 
-        X, Y = np.meshgrid(x, y)
+        X, Y = np.meshgrid(xs, ys)
 
         return X.flatten(), Y.flatten()
