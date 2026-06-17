@@ -1,28 +1,44 @@
-
 import numpy as np
-from dataclasses import dataclass
-from .models import Survey
 
-@dataclass
-class GeometryResult:
-    receiver_x: np.ndarray
-    receiver_y: np.ndarray
-    shot_x: np.ndarray
-    shot_y: np.ndarray
+class Geometry:
 
-class GeometryEngine:
-    def __init__(self, survey: Survey):
+    def __init__(self, survey):
         self.survey = survey
 
-    def build(self):
-        s=self.survey
-        nlines=s.receiver_lines_per_patch+s.spare_receiver_lines
-        rx_x=np.arange(0,s.width+0.01,s.receiver_interval)
-        rx_y=np.arange(nlines)*s.receiver_line_spacing
-        RX,RY=np.meshgrid(rx_x,rx_y)
+    def build_receivers(self):
 
-        sx=np.arange(0,s.width+0.01,s.source_line_spacing)
-        sy=np.arange(0,s.height+0.01,s.source_interval)
-        SX,SY=np.meshgrid(sx,sy)
+        s = self.survey
 
-        return GeometryResult(RX.ravel(),RY.ravel(),SX.ravel(),SY.ravel())
+        total_lines = s.receiver_lines_active + s.receiver_lines_spare
+
+        x = np.arange(
+            0,
+            s.width + s.receiver_interval,
+            s.receiver_interval
+        )
+
+        y = np.arange(total_lines) * s.receiver_line_spacing
+
+        X, Y = np.meshgrid(x, y)
+
+        return X.flatten(), Y.flatten()
+
+    def build_sources(self):
+
+        s = self.survey
+
+        x = np.arange(
+            0,
+            s.width + s.source_line_spacing,
+            s.source_line_spacing
+        )
+
+        y = np.arange(
+            0,
+            s.height + s.source_interval,
+            s.source_interval
+        )
+
+        X, Y = np.meshgrid(x, y)
+
+        return X.flatten(), Y.flatten()
