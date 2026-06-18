@@ -3,6 +3,11 @@ from traces import TraceDatabase
 from survey import Survey
 from geometry import Geometry
 
+print("=" * 60)
+print("              FantaSeis Survey Designer")
+print("=" * 60)
+print()
+
 survey = Survey(
     width=15840,
     height=15840,
