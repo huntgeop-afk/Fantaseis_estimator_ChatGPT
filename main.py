@@ -1,9 +1,9 @@
 import sys
 
-import matplotlib.pyplot as plt
-
 from survey import Survey
 from gis import GISProject
+from geometry import Geometry
+from plotting import Plotter
 
 
 def main():
@@ -11,11 +11,8 @@ def main():
     if len(sys.argv) != 2:
 
         print()
-
         print("Usage:")
-
         print("python main.py <project folder>")
-
         return
 
     project = sys.argv[1]
@@ -24,43 +21,56 @@ def main():
 
     gis = GISProject(project)
 
-    boundary = gis.load_boundary()
+    gis.load_boundary()
+
+    geometry = Geometry(survey, gis)
+
+    geometry.generate()
 
     print()
-
     print("---------------------------------------")
-
     print("Survey Parameters")
-
     print("---------------------------------------")
-
     print(survey)
 
     print()
-
     print("---------------------------------------")
-
     print("GIS Information")
-
     print("---------------------------------------")
 
-    print("CRS")
+    print(f"CRS : {gis.crs}")
 
-    print(gis.crs)
+    xmin, ymin, xmax, ymax = gis.bounds
 
     print()
-
     print("Bounds")
+    print(f"West  : {xmin:.2f}")
+    print(f"South : {ymin:.2f}")
+    print(f"East  : {xmax:.2f}")
+    print(f"North : {ymax:.2f}")
 
-    print(gis.bounds)
+    print()
+    print("---------------------------------------")
+    print("Generated Geometry")
+    print("---------------------------------------")
 
-    ax = boundary.plot(figsize=(8,8))
+    print(f"Receiver Nodes : {geometry.receiver_count}")
+    print(f"Shot Points    : {geometry.shot_count}")
 
-    ax.set_title("Survey Boundary")
+    inside_receivers = sum(r.inside_boundary for r in geometry.receivers)
+    inside_shots = sum(s.inside_boundary for s in geometry.shots)
 
-    plt.show()
+    print(f"Receivers Inside Boundary : {inside_receivers}")
+    print(f"Shots Inside Boundary     : {inside_shots}")
+
+    #
+    # Display geometry
+    #
+
+    plotter = Plotter(gis, geometry)
+
+    plotter.plot_geometry()
 
 
 if __name__ == "__main__":
-
     main()
