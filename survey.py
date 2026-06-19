@@ -1,16 +1,10 @@
 from dataclasses import dataclass
-import math
+import json
+from pathlib import Path
 
 
 @dataclass
 class Survey:
-
-    # Survey dimensions (feet)
-
-    survey_width: float
-    survey_height: float
-
-    # Geometry
 
     receiver_line_spacing: float
     receiver_interval: float
@@ -20,42 +14,17 @@ class Survey:
 
     active_receiver_lines: int
 
-    @property
-    def receiver_lines(self):
+    target_depth: float
 
-        return (
-            math.floor(
-                self.survey_width /
-                self.receiver_line_spacing
-            ) + 1
-        )
+    maximum_incidence_angle: float
 
-    @property
-    def source_lines(self):
+    @classmethod
+    def load(cls, project_folder):
 
-        return (
-            math.floor(
-                self.survey_width /
-                self.source_line_spacing
-            ) + 1
-        )
+        filename = Path(project_folder) / "survey.json"
 
-    @property
-    def receiver_stations(self):
+        with open(filename) as f:
 
-        return (
-            math.floor(
-                self.survey_height /
-                self.receiver_interval
-            ) + 1
-        )
+            data = json.load(f)
 
-    @property
-    def shot_rows(self):
-
-        return (
-            math.floor(
-                self.survey_height /
-                self.shot_interval
-            ) + 1
-        )
+        return cls(**data)

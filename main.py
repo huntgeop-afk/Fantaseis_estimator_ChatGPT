@@ -1,38 +1,64 @@
+import sys
+
+import matplotlib.pyplot as plt
+
 from survey import Survey
-from acquisition_simulator import AcquisitionSimulator
+from gis import GISProject
 
 
 def main():
 
-    survey = Survey(
+    if len(sys.argv) != 2:
 
-        survey_width=15840,
-        survey_height=15840,
+        print()
 
-        receiver_line_spacing=550,
-        receiver_interval=165,
+        print("Usage:")
 
-        source_line_spacing=660,
-        shot_interval=220,
+        print("python main.py <project folder>")
 
-        active_receiver_lines=12
-    )
+        return
 
-    sim = AcquisitionSimulator(survey)
+    project = sys.argv[1]
 
-    while sim.state.current_shot_row <= survey.shot_rows:
+    survey = Survey.load(project)
 
-        sim.complete_shot_row()
+    gis = GISProject(project)
+
+    boundary = gis.load_boundary()
 
     print()
-    print("------------------------------------")
-    print("Simulation Complete")
-    print("------------------------------------")
 
-    print(f"Receiver Lines : {survey.receiver_lines}")
-    print(f"Source Lines   : {survey.source_lines}")
-    print(f"Shot Rows      : {survey.shot_rows}")
-    print(f"Receiver Rolls : {sim.state.receiver_rolls}")
+    print("---------------------------------------")
+
+    print("Survey Parameters")
+
+    print("---------------------------------------")
+
+    print(survey)
+
+    print()
+
+    print("---------------------------------------")
+
+    print("GIS Information")
+
+    print("---------------------------------------")
+
+    print("CRS")
+
+    print(gis.crs)
+
+    print()
+
+    print("Bounds")
+
+    print(gis.bounds)
+
+    ax = boundary.plot(figsize=(8,8))
+
+    ax.set_title("Survey Boundary")
+
+    plt.show()
 
 
 if __name__ == "__main__":
