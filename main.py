@@ -1,61 +1,40 @@
-from plotting import Plotter
-from traces import TraceDatabase
 from survey import Survey
-from geometry import Geometry
+from acquisition_simulator import AcquisitionSimulator
 
-print("=" * 60)
-print("              FantaSeis Survey Designer")
-print("=" * 60)
-print()
 
-survey = Survey(
-    width=15840,
-    height=15840,
+def main():
 
-    receiver_interval=165,
-    receiver_line_spacing=550,
-    receiver_lines=13,
+    survey = Survey(
 
-    source_interval=220,
-    source_line_spacing=660
-)
+        survey_width=15840,
+        survey_height=15840,
 
-geometry = Geometry(survey)
+        receiver_line_spacing=550,
+        receiver_interval=165,
 
-rx, ry = geometry.generate_receivers()
-sx, sy = geometry.generate_sources()
+        source_line_spacing=660,
+        shot_interval=220,
 
-print()
-print("===== Survey Summary =====")
-print(f"Receiver nodes : {len(rx):,}")
-print(f"Shot points    : {len(sx):,}")
+        active_receiver_lines=12
+    )
 
-print()
-print("First 10 receiver locations")
+    sim = AcquisitionSimulator(survey)
 
-for i in range(10):
-    print(f"{i+1:2d}: ({rx[i]:7.1f}, {ry[i]:7.1f})")
+    while sim.state.current_shot_row <= survey.shot_rows:
 
-print()
-print("First 10 shot locations")
+        sim.complete_shot_row()
 
-for i in range(10):
-    print(f"{i+1:2d}: ({sx[i]:7.1f}, {sy[i]:7.1f})")
     print()
-print("Building trace database...")
+    print("------------------------------------")
+    print("Simulation Complete")
+    print("------------------------------------")
 
-traces = TraceDatabase(rx, ry, sx, sy)
+    print(f"Receiver Lines : {survey.receiver_lines}")
+    print(f"Source Lines   : {survey.source_lines}")
+    print(f"Shot Rows      : {survey.shot_rows}")
+    print(f"Receiver Rolls : {sim.state.receiver_rolls}")
 
-cmpx, cmpy, offset, azimuth = traces.build()
 
-print("Done!")
+if __name__ == "__main__":
 
-print()
-print(f"Number of traces : {len(offset):,}")
-
-print(f"Minimum offset   : {offset.min():.1f} ft")
-
-print(f"Maximum offset   : {offset.max():.1f} ft")
-
-print(f"Average offset   : {offset.mean():.1f} ft")
-Plotter.plot_geometry(rx, ry, sx, sy)
+    main()
