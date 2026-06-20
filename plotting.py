@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 
 class Plotter:
 
+    """Creates and manages survey figures for interactive use and automated pipelines."""
+
     def __init__(self, gis, geometry):
 
         self.gis = gis
@@ -18,9 +20,50 @@ class Plotter:
 
     ##################################################################
 
-    def plot_geometry(self):
+    def plot_geometry(self, show=False, save_path=None, dpi=300):
 
-        fig, ax = plt.subplots(figsize=(11, 11))
+        fig, ax = plt.subplots(figsize=(10, 10))
+
+        try:
+            self._draw_geometry(ax)
+            self._format_geometry_axes(ax)
+
+            if save_path is not None:
+                fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+
+            if show:
+                plt.show()
+
+        finally:
+            plt.close(fig)
+
+    ##################################################################
+
+    def plot_fold_heatmap(self, show=False, save_path=None, dpi=300):
+
+        raise NotImplementedError("Fold heat map plotting is not implemented in Plotter yet.")
+
+    ##################################################################
+
+    def plot_offset_heatmap(self, show=False, save_path=None, dpi=300):
+
+        raise NotImplementedError("Offset heat map plotting is not implemented in Plotter yet.")
+
+    ##################################################################
+
+    def plot_azimuth_rose(self, show=False, save_path=None, dpi=300):
+
+        raise NotImplementedError("Azimuth rose plotting is not implemented in Plotter yet.")
+
+    ##################################################################
+
+    def plot_illumination(self, show=False, save_path=None, dpi=300):
+
+        raise NotImplementedError("Illumination plotting is not implemented in Plotter yet.")
+
+    ##################################################################
+
+    def _draw_geometry(self, ax):
 
         #
         # -------------------------------------------------------------
@@ -232,18 +275,22 @@ class Plotter:
                 rotation=90
             )
 
+    ##################################################################
+
+    def _format_geometry_axes(self, ax):
+
         #
         # -------------------------------------------------------------
         # Title
         # -------------------------------------------------------------
         #
 
-        receiver_line_count = len(receiver_lines)
+        receiver_line_count = len({r.line for r in self.geometry.receivers})
         receiver_station_count = max(
             r.station for r in self.geometry.receivers
         )
 
-        source_line_count = len(source_lines)
+        source_line_count = len({s.line for s in self.geometry.shots})
         shot_station_count = max(
             s.station for s in self.geometry.shots
         )
@@ -270,5 +317,3 @@ class Plotter:
         ax.legend(loc="upper right")
 
         plt.tight_layout()
-
-        plt.show()
