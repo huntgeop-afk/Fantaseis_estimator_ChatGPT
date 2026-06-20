@@ -1,4 +1,10 @@
 from dataclasses import dataclass
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from survey import Survey
 from gis import GISProject
@@ -11,6 +17,10 @@ from cost_model import CostModel
 
 from cmp_analysis import CMPAnalysis
 from cmp_populator import CMPPopulator
+from plotting import Plotter
+from fold_heatmap import FoldHeatMap
+from offset_heatmap import OffsetHeatMap
+from azimuth_rose import AzimuthRose
 
 from true_fold_analysis import TrueFoldAnalysis
 from offset_distribution import OffsetDistributionAnalysis
@@ -47,7 +57,8 @@ class SurveyPipeline:
     """Orchestrates the end-to-end FantaSeis workflow using existing project modules."""
 
     def __init__(self, project_folder):
-        self.project_folder = project_folder
+        self.project_folder = Path(project_folder)
+        self.show_plots = False
 
     #################################################################
 
@@ -167,7 +178,6 @@ class SurveyPipeline:
             ),
         )
 
-        print("Generating Report...")
         report_text = self._run_step(
             "Report generation",
             lambda: OptimizationReport(
@@ -180,6 +190,22 @@ class SurveyPipeline:
                 avaz_summary=avaz_summary,
                 illumination_summary=illumination_summary,
             ).generate(),
+        )
+
+        results_dir = self._results_directory()
+
+        print("Generating Figures...")
+        self._generate_figures(
+            results_dir,
+            gis,
+            geometry,
+            cmp_grid,
+        )
+
+        print("Saving optimization_report.txt")
+        self._run_step(
+            "Optimization report write",
+            lambda: self._write_text_file(results_dir / "optimization_report.txt", report_text),
         )
 
         print("Done.")
@@ -213,6 +239,13 @@ class SurveyPipeline:
 
     #################################################################
 
+    def _results_directory(self):
+        results_dir = self.project_folder / "results"
+        results_dir.mkdir(parents=True, exist_ok=True)
+        return results_dir
+
+    #################################################################
+
     def _load_gis(self):
         gis = GISProject(self.project_folder)
         gis.load_boundary()
@@ -224,6 +257,64 @@ class SurveyPipeline:
         geometry = Geometry(survey, gis)
         geometry.generate()
         return geometry
+
+    #################################################################
+
+    def _generate_figures(self, results_dir, gis, geometry, cmp_grid):
+        plotter = Plotter(gis, geometry)
+
+        self._save_figure(
+            "geometry",
+            results_dir / "geometry.png",
+            plotter.plot_geometry,
+        )
+
+        self._save_figure(
+            "fold_heatmap",
+            results_dir / "fold_heatmap.png",
+            lambda: FoldHeatMap(cmp_grid, gis).plot(),
+        )
+
+        self._save_figure(
+            "offset_heatmap",
+            results_dir / "offset_heatmap.png",
+            lambda: OffsetHeatMap(cmp_grid, gis).plot(),
+        )
+
+        self._save_figure(
+            "azimuth_rose",
+            results_dir / "azimuth_rose.png",
+            lambda: AzimuthRose(cmp_grid).plot(),
+        )
+
+    #################################################################
+
+    def _save_figure(self, figure_name, output_path, plot_callable):
+        print(f"Saving {output_path.name}")
+
+        original_show = plt.show
+        figure = None
+
+        try:
+            if not self.show_plots:
+                plt.show = lambda *args, **kwargs: None
+
+            plot_callable()
+            figure = plt.gcf()
+            figure.savefig(output_path, dpi=300, bbox_inches="tight")
+        except Exception as exc:
+            raise RuntimeError(f"Failed generating {figure_name} figure: {exc}") from exc
+        finally:
+            plt.show = original_show
+            if figure is not None:
+                plt.close(figure)
+            else:
+                plt.close("all")
+
+    #################################################################
+
+    def _write_text_file(self, file_path, text):
+        file_path.write_text(text, encoding="utf-8")
 
     #################################################################
 
