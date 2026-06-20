@@ -14,6 +14,17 @@ class SurveyNode:
     inside_boundary: bool
 
 
+@dataclass
+class ReceiverPatch:
+    """Represents one active receiver window used during acquisition."""
+
+    patch_number: int
+    first_receiver_line: int
+    last_receiver_line: int
+    trigger_shot_station: int
+    receiver_line_count: int
+
+
 class Geometry:
 
     def __init__(self, survey, gis):
@@ -42,6 +53,66 @@ class Geometry:
     @property
     def shot_count(self):
         return len(self.shots)
+
+    #################################################################
+
+    def receiver_patch(self, patch_number):
+        """Return patch geometry for a patch index so acquisition consumes geometry, not formulas."""
+
+        if patch_number < 1:
+            raise ValueError("patch_number must be >= 1")
+
+        receiver_lines = sorted({node.line for node in self.receivers})
+
+        if not receiver_lines:
+            raise ValueError("Receiver geometry has not been generated")
+
+        total_lines = receiver_lines[-1]
+        patch_size = self.survey.active_receiver_lines
+
+        first_receiver_line = patch_number
+        last_receiver_line = min(
+            first_receiver_line + patch_size - 1,
+            total_lines,
+        )
+
+        if first_receiver_line > total_lines:
+            raise ValueError("patch_number exceeds available receiver lines")
+
+        return ReceiverPatch(
+            patch_number=patch_number,
+            first_receiver_line=first_receiver_line,
+            last_receiver_line=last_receiver_line,
+            trigger_shot_station=self.trigger_shot_station(
+                first_receiver_line,
+                last_receiver_line,
+            ),
+            receiver_line_count=(last_receiver_line - first_receiver_line + 1),
+        )
+
+    #################################################################
+
+    def trigger_shot_station(self, first_receiver_line, last_receiver_line):
+        """Compute the patch-roll trigger in Geometry so Acquisition remains sequence-only logic."""
+
+        if first_receiver_line < 1 or last_receiver_line < first_receiver_line:
+            raise ValueError("Invalid receiver line range")
+
+        if not self.shots:
+            raise ValueError("Shot geometry has not been generated")
+
+        center_line = (first_receiver_line + last_receiver_line) / 2.0
+
+        trigger = round(
+            center_line * self.survey.receiver_line_spacing / self.survey.shot_interval
+        )
+
+        shot_stations = sorted({shot.station for shot in self.shots})
+
+        return max(
+            shot_stations[0],
+            min(trigger, shot_stations[-1]),
+        )
 
     #################################################################
 

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from survey_state import SurveyState
 
 
 @dataclass
@@ -12,10 +13,16 @@ class AcquisitionSimulator:
     def __init__(self, survey, geometry):
         self.survey = survey
         self.geometry = geometry
+        self.state = SurveyState()
 
     #################################################################
 
     def generate_schedule(self):
+        self.state.begin_survey()
+        self.state.first_active_receiver_line = 1
+        self.state.last_active_receiver_line = self.survey.active_receiver_lines
+        self.state.current_shot_station = 1
+
         events = [
             AcquisitionEvent(
                 event_type="BEGIN_SURVEY",
@@ -36,6 +43,7 @@ class AcquisitionSimulator:
         )
 
         if not receiver_line_numbers or not shot_station_numbers or not source_line_numbers:
+            self.state.finish_survey()
             events.append(
                 AcquisitionEvent(
                     event_type="END_SURVEY",
@@ -44,25 +52,25 @@ class AcquisitionSimulator:
             )
             return events
 
-        patch_size = self.survey.active_receiver_lines
-
-        south_index = 0
-        north_index = min(patch_size - 1, len(receiver_line_numbers) - 1)
+        self.state.last_active_receiver_line = min(
+            self.state.last_active_receiver_line,
+            receiver_line_numbers[-1],
+        )
 
         events.append(
             AcquisitionEvent(
                 event_type="DEPLOY_PATCH",
                 description=(
-                    f"Deploy receiver patch RL{receiver_line_numbers[south_index]}"
-                    f"-RL{receiver_line_numbers[north_index]}."
+                    f"Deploy receiver patch RL{self.state.first_active_receiver_line}"
+                    f"-RL{self.state.last_active_receiver_line}."
                 ),
             )
         )
 
-        south_line = receiver_line_numbers[south_index]
-        north_line = receiver_line_numbers[north_index]
-
-        center_line = (south_line + north_line) / 2.0
+        center_line = (
+            self.state.first_active_receiver_line +
+            self.state.last_active_receiver_line
+        ) / 2.0
         center_station = round(
             center_line * self.survey.receiver_line_spacing / self.survey.shot_interval
         )
@@ -71,11 +79,14 @@ class AcquisitionSimulator:
             min(center_station, shot_station_numbers[-1]),
         )
 
-        for shot_station in shot_station_numbers:
-            south_line = receiver_line_numbers[south_index]
-            north_line = receiver_line_numbers[north_index]
+        max_shot_station = shot_station_numbers[-1]
 
-            if shot_station % 2 == 1:
+        while self.state.current_shot_station <= max_shot_station:
+            shot_station = self.state.current_shot_station
+            south_line = self.state.first_active_receiver_line
+            north_line = self.state.last_active_receiver_line
+
+            if self.state.current_source_direction == "WEST_TO_EAST":
                 line_sequence = source_line_numbers
                 direction = "west->east"
             else:
@@ -96,9 +107,14 @@ class AcquisitionSimulator:
                 )
             )
 
-            if shot_station == center_station and north_index < len(receiver_line_numbers) - 1:
-                old_south = receiver_line_numbers[south_index]
-                next_north = receiver_line_numbers[north_index + 1]
+            self.state.advance_shot_station()
+
+            if (
+                shot_station == center_station and
+                self.state.last_active_receiver_line < receiver_line_numbers[-1]
+            ):
+                old_south = self.state.first_active_receiver_line
+                next_north = self.state.last_active_receiver_line + 1
 
                 events.append(
                     AcquisitionEvent(
@@ -110,12 +126,12 @@ class AcquisitionSimulator:
                     )
                 )
 
-                south_index += 1
-                north_index += 1
+                self.state.roll_receiver_patch()
 
-                south_line = receiver_line_numbers[south_index]
-                north_line = receiver_line_numbers[north_index]
-                center_line = (south_line + north_line) / 2.0
+                center_line = (
+                    self.state.first_active_receiver_line +
+                    self.state.last_active_receiver_line
+                ) / 2.0
                 center_station = round(
                     center_line * self.survey.receiver_line_spacing / self.survey.shot_interval
                 )
@@ -124,8 +140,8 @@ class AcquisitionSimulator:
                     min(center_station, shot_station_numbers[-1]),
                 )
 
-        final_south = receiver_line_numbers[south_index]
-        final_north = receiver_line_numbers[north_index]
+        final_south = self.state.first_active_receiver_line
+        final_north = self.state.last_active_receiver_line
 
         events.append(
             AcquisitionEvent(
@@ -136,6 +152,8 @@ class AcquisitionSimulator:
                 ),
             )
         )
+
+        self.state.finish_survey()
 
         events.append(
             AcquisitionEvent(
