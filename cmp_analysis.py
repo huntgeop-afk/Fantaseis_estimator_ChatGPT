@@ -35,8 +35,8 @@ class CMPAnalysis:
     def generate(self):
         xmin, ymin, xmax, ymax = self._bounds()
 
-        bin_size_x = self.survey.receiver_interval / 2.0
-        bin_size_y = self.survey.shot_interval / 2.0
+        bin_size_x = self.survey.processing_bin_size
+        bin_size_y = self.survey.processing_bin_size
 
         bins = []
 

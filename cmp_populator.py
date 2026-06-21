@@ -17,6 +17,16 @@ class CMPPopulator:
         if not self.acquisition.shot_patch_lookup:
             self.acquisition.generate_schedule()
 
+        survey = self.acquisition.survey
+        maximum_offset = (
+            2.0
+            * survey.target_depth
+            * math.tan(math.radians(survey.maximum_incidence_angle))
+        )
+
+        accepted_traces = 0
+        rejected_traces = 0
+
         x_centers, y_centers, bin_lookup = self._build_bin_lookup()
 
         for shot in self.geometry.shots:
@@ -38,6 +48,10 @@ class CMPPopulator:
                 midpoint_x = (shot.x + receiver.x) / 2.0
                 midpoint_y = (shot.y + receiver.y) / 2.0
                 offset = math.hypot(dx, dy)
+
+                if offset > maximum_offset:
+                    rejected_traces += 1
+                    continue
 
                 azimuth_deg = math.degrees(math.atan2(dy, dx))
                 if azimuth_deg < 0.0:
@@ -63,6 +77,11 @@ class CMPPopulator:
                 traces = self._trace_bucket(bin_record)
                 traces.append(trace)
                 bin_record.trace_count += 1
+                accepted_traces += 1
+
+            print(f"Accepted traces : {accepted_traces}")
+            print(f"Rejected traces : {rejected_traces}")
+            print(f"Maximum offset allowed : {maximum_offset:.0f} ft")
 
         return self.cmp_grid
 
