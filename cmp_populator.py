@@ -6,9 +6,10 @@ from cmp_trace import CMPTrace
 class CMPPopulator:
     """Populates a CMP grid with trace records derived from generated survey points."""
 
-    def __init__(self, cmp_grid, geometry):
+    def __init__(self, cmp_grid, geometry, acquisition):
         self.cmp_grid = cmp_grid
         self.geometry = geometry
+        self.acquisition = acquisition
 
     #################################################################
 
@@ -19,7 +20,12 @@ class CMPPopulator:
             if not shot.inside_boundary:
                 continue
 
-            for receiver in self.geometry.receivers:
+            if hasattr(self.acquisition, "active_receivers_for_shot"):
+                active_receivers = self.acquisition.active_receivers_for_shot(shot)
+            else:
+                active_receivers = self.geometry.receivers
+
+            for receiver in active_receivers:
                 if not receiver.inside_boundary:
                     continue
 
