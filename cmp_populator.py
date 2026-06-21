@@ -14,6 +14,9 @@ class CMPPopulator:
     #################################################################
 
     def populate(self):
+        if not self.acquisition.shot_patch_lookup:
+            self.acquisition.generate_schedule()
+
         x_centers, y_centers, bin_lookup = self._build_bin_lookup()
 
         for shot in self.geometry.shots:
