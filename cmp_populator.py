@@ -28,6 +28,9 @@ class CMPPopulator:
         rejected_traces = 0
         total_shots_processed = 0
         total_active_receivers = 0
+        valid_bin_assignments = 0
+        invalid_bin_assignments = 0
+        populated_bin_keys = set()
 
         x_centers, y_centers, bin_lookup = self._build_bin_lookup()
 
@@ -72,6 +75,25 @@ class CMPPopulator:
                     azimuth_deg=azimuth_deg,
                 )
 
+                x_index = self._nearest_index(
+                    midpoint_x,
+                    x_centers,
+                    self.cmp_grid.bin_size_x,
+                )
+                y_index = self._nearest_index(
+                    midpoint_y,
+                    y_centers,
+                    self.cmp_grid.bin_size_y,
+                )
+                assigned_xy = (x_centers[x_index], y_centers[y_index])
+
+                if assigned_xy in bin_lookup:
+                    valid_bin_assignments += 1
+                else:
+                    invalid_bin_assignments += 1
+                    print("ERROR:")
+                    print("Trace assigned to non-existent CMP bin.")
+
                 bin_record = self._nearest_bin(
                     midpoint_x,
                     midpoint_y,
@@ -84,23 +106,32 @@ class CMPPopulator:
                 traces.append(trace)
                 bin_record.trace_count += 1
                 accepted_traces += 1
+                populated_bin_keys.add(bin_record.xy)
 
-        average_active_receivers = total_active_receivers / max(1, total_shots_processed)
-        theoretical_trace_count = total_active_receivers
-        acceptance_percentage = (
-            100.0 * accepted_traces / max(1, accepted_traces + rejected_traces)
-        )
+        total_cmp_bins = len(self.cmp_grid.bins)
+        live_cmp_bins = len(populated_bin_keys)
+
+        if live_cmp_bins > 0:
+            average_traces_per_live_bin = accepted_traces / live_cmp_bins
+            maximum_traces_per_live_bin = max(
+                bin_lookup[xy].trace_count for xy in populated_bin_keys
+            )
+        else:
+            average_traces_per_live_bin = 0.0
+            maximum_traces_per_live_bin = 0
 
         print("==================================================")
-        print("TRACE GENERATION SUMMARY")
+        print("CMP BIN VALIDATION")
         print("==================================================")
-        print(f"Shots Processed           : {total_shots_processed}")
-        print(f"Average Active Receivers  : {average_active_receivers:.0f}")
-        print(f"Theoretical Trace Count   : {theoretical_trace_count}")
-        print(f"Accepted Trace Count      : {accepted_traces}")
-        print(f"Rejected Trace Count      : {rejected_traces}")
-        print(f"Acceptance Percentage     : {acceptance_percentage:.2f} %")
-        print(f"Maximum Offset Allowed    : {maximum_offset:.0f} ft")
+        print(f"Total CMP Bins            : {total_cmp_bins}")
+        print(f"Live CMP Bins             : {live_cmp_bins}")
+        print(f"Accepted Traces           : {accepted_traces}")
+        print(f"Rejected Traces           : {rejected_traces}")
+        print(f"Average Traces / Live Bin : {average_traces_per_live_bin:.1f}")
+        print(f"Maximum Traces / Live Bin : {maximum_traces_per_live_bin}")
+        print(f"Valid Bin Assignments     : {valid_bin_assignments}")
+        print(f"Invalid Bin Assignments   : {invalid_bin_assignments}")
+        print("==================================================")
 
         return self.cmp_grid
 

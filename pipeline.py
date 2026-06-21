@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 from survey import Survey
 from gis import GISProject
 from geometry import Geometry
+from acquisition import AcquisitionSimulator
+from debug_geometry import GeometryDebugger
 
 from production import ProductionModel, ProductionRates
 from logistics import LogisticsModel, LogisticsScenario, EquipmentInventory
@@ -31,6 +33,7 @@ from illumination_analysis import IlluminationAnalysis
 
 from survey_optimizer import SurveyOptimizer
 from optimization_report import OptimizationReport
+from config import DEBUG
 
 
 @dataclass
@@ -38,6 +41,8 @@ class PipelineResults:
     survey: object
     gis: object
     geometry: object
+    acquisition: object
+    acquisition_events: list
     production: object
     logistics: object
     cost_model: object
@@ -56,9 +61,10 @@ class PipelineResults:
 class SurveyPipeline:
     """Orchestrates the end-to-end FantaSeis workflow using existing project modules."""
 
-    def __init__(self, project_folder):
+    def __init__(self, project_folder, debug=DEBUG):
         self.project_folder = Path(project_folder)
         self.show_plots = False
+        self.debug = debug
 
     #################################################################
 
@@ -81,19 +87,28 @@ class SurveyPipeline:
             lambda: self._generate_geometry(survey, gis),
         )
 
-        print("Running Production Model...")
+        acquisition = AcquisitionSimulator(survey, geometry)
+
+        print("Running Analyses...")
+        self._log("Generating Acquisition Schedule...")
+        acquisition_events = self._run_step(
+            "Acquisition scheduling",
+            lambda: acquisition.generate_schedule(),
+        )
+
+        self._log("Running Production Model...")
         production_summary = self._run_step(
             "Production model",
             lambda: ProductionModel(ProductionRates()).estimate([], geometry),
         )
 
-        print("Running Logistics Model...")
+        self._log("Running Logistics Model...")
         logistics_summary = self._run_step(
             "Logistics model",
             lambda: self._run_logistics(geometry, production_summary),
         )
 
-        print("Running Node Rental Model...")
+        self._log("Running Node Rental Model...")
         node_rental_summary = self._run_step(
             "Node rental model",
             lambda: NodeRentalModel(NodeRentalRates()).estimate(
@@ -102,7 +117,7 @@ class SurveyPipeline:
             ),
         )
 
-        print("Running Cost Model...")
+        self._log("Running Cost Model...")
         cost_summary = self._run_step(
             "Cost model",
             lambda: CostModel().estimate(
@@ -113,37 +128,38 @@ class SurveyPipeline:
             ),
         )
 
-        print("Generating CMP Grid...")
+        self._log("Generating CMP Grid...")
         cmp_grid = self._run_step(
             "CMP grid generation",
             lambda: CMPAnalysis(survey, geometry).generate(),
         )
 
-        print("Populating CMP Grid...")
+        self._log("Populating CMP Grid...")
         cmp_grid = self._run_step(
             "CMP population",
-            lambda: CMPPopulator(cmp_grid, geometry).populate(),
+            lambda: CMPPopulator(cmp_grid, geometry, acquisition).populate(),
         )
 
-        print("Computing Fold...")
+        self._log("Computing Fold...")
         true_fold_summary = self._run_step(
             "True fold analysis",
             lambda: TrueFoldAnalysis(cmp_grid).analyze(),
         )
+        print(true_fold_summary.summary())
 
-        print("Computing Offset Statistics...")
+        self._log("Computing Offset Statistics...")
         offset_distribution = self._run_step(
             "Offset distribution analysis",
             lambda: OffsetDistributionAnalysis(cmp_grid).analyze(),
         )
 
-        print("Computing Azimuth Statistics...")
+        self._log("Computing Azimuth Statistics...")
         azimuth_summary = self._run_step(
             "Azimuth analysis",
             lambda: AzimuthAnalysis(cmp_grid).analyze(),
         )
 
-        print("Computing AVA Suitability...")
+        self._log("Computing AVA Suitability...")
         ava_summary = self._run_step(
             "AVA analysis",
             lambda: AVAAnalysis(
@@ -153,19 +169,19 @@ class SurveyPipeline:
             ).analyze(),
         )
 
-        print("Computing AVAz Suitability...")
+        self._log("Computing AVAz Suitability...")
         avaz_summary = self._run_step(
             "AVAz analysis",
             lambda: AVAzAnalysis(cmp_grid).analyze(),
         )
 
-        print("Computing Illumination...")
+        self._log("Computing Illumination...")
         illumination_summary = self._run_step(
             "Illumination analysis",
             lambda: IlluminationAnalysis(cmp_grid).analyze(),
         )
 
-        print("Evaluating Current Design...")
+        self._log("Evaluating Current Design...")
         optimization_result = self._run_step(
             "Current design evaluation",
             lambda: self._evaluate_current_design(
@@ -202,18 +218,18 @@ class SurveyPipeline:
             cmp_grid,
         )
 
-        print("Saving optimization_report.txt")
+        self._log("Saving optimization_report.txt")
         self._run_step(
             "Optimization report write",
             lambda: self._write_text_file(results_dir / "optimization_report.txt", report_text),
         )
 
-        print("Done.")
-
         return PipelineResults(
             survey=survey,
             gis=gis,
             geometry=geometry,
+            acquisition=acquisition,
+            acquisition_events=acquisition_events,
             production=production_summary,
             logistics=logistics_summary,
             cost_model=cost_summary,
@@ -239,6 +255,12 @@ class SurveyPipeline:
 
     #################################################################
 
+    def _log(self, message):
+        if self.debug:
+            print(message)
+
+    #################################################################
+
     def _results_directory(self):
         results_dir = self.project_folder / "results"
         results_dir.mkdir(parents=True, exist_ok=True)
@@ -256,17 +278,21 @@ class SurveyPipeline:
     def _generate_geometry(self, survey, gis):
         geometry = Geometry(survey, gis)
         geometry.generate()
+
+        if self.debug:
+            debugger = GeometryDebugger(geometry)
+            debugger.run()
+
         return geometry
 
     #################################################################
 
     def _generate_figures(self, results_dir, gis, geometry, cmp_grid):
-        plotter = Plotter(gis, geometry)
+        plotter = Plotter(gis, geometry, cmp_grid)
 
-        self._save_figure(
-            "geometry",
-            results_dir / "geometry.png",
-            plotter.plot_geometry,
+        self._run_step(
+            "Geometry figure generation",
+            lambda: plotter.plot_geometry(save_path=results_dir / "geometry.png"),
         )
 
         self._save_figure(
@@ -290,7 +316,7 @@ class SurveyPipeline:
     #################################################################
 
     def _save_figure(self, figure_name, output_path, plot_callable):
-        print(f"Saving {output_path.name}")
+        self._log(f"Saving {output_path.name}")
 
         original_show = plt.show
         figure = None

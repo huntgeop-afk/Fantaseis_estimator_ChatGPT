@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import math
 
 from shapely.geometry import Point
+from pyproj import CRS, Transformer
 
 
 @dataclass
@@ -39,6 +40,7 @@ class Geometry:
     def generate(self):
         self._build_basis()
         self._compute_grid_bounds()
+        self._configure_boundary_tester()
         self._generate_receivers()
         self._generate_shots()
 
@@ -332,10 +334,36 @@ class Geometry:
         if polygon is None:
             return False
 
+        if self._point_transformer is not None:
+            x, y = self._point_transformer.transform(x, y)
+
         point = Point(x, y)
 
         try:
             return polygon.covers(point)
         except AttributeError:
             return polygon.contains(point) or polygon.touches(point)
+
+    #################################################################
+
+    def _configure_boundary_tester(self):
+        self._point_transformer = None
+
+        boundary_crs = getattr(self.gis, "crs", None)
+        geometry_crs = getattr(self, "crs", None)
+
+        if boundary_crs is None or geometry_crs is None:
+            return
+
+        boundary_crs = CRS.from_user_input(boundary_crs)
+        geometry_crs = CRS.from_user_input(geometry_crs)
+
+        if boundary_crs == geometry_crs:
+            return
+
+        self._point_transformer = Transformer.from_crs(
+            geometry_crs,
+            boundary_crs,
+            always_xy=True,
+        )
 

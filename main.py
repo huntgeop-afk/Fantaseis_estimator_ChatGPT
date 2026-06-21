@@ -1,5 +1,7 @@
 import sys
 from pipeline import SurveyPipeline
+from qc_report import QCReport
+from config import DEBUG
 
 
 def main():
@@ -13,7 +15,7 @@ def main():
 
     project_folder = sys.argv[1]
 
-    pipeline = SurveyPipeline(project_folder)
+    pipeline = SurveyPipeline(project_folder, debug=DEBUG)
 
     try:
         results = pipeline.run()
@@ -22,12 +24,10 @@ def main():
         print(str(exc))
         raise SystemExit(1)
 
-    print()
-    print("======================================================")
-    print("Survey Completed Successfully")
-    print("======================================================")
-    print()
-    print(results.report_text)
+    print("Generating QC Report...")
+    qc_report_text = QCReport(results).generate()
+    print(qc_report_text, end="")
+    print("Survey Completed Successfully.")
 
 
 if __name__ == "__main__":

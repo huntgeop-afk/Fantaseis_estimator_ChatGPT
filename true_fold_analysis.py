@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import math
 
 
 @dataclass
@@ -49,6 +50,7 @@ class TrueFoldAnalysis:
         bins = getattr(self.cmp_grid, "bins", [])
 
         if not bins:
+            self._print_fold_distribution([])
             return TrueFoldSummary(
                 design_fold=0.0,
                 minimum_fold=0,
@@ -65,6 +67,7 @@ class TrueFoldAnalysis:
         dead_bins = sum(1 for fold in folds if fold == 0)
 
         if live_bins == 0:
+            live_folds = []
             minimum_fold = 0
             maximum_fold = 0
             average_fold = 0.0
@@ -73,6 +76,8 @@ class TrueFoldAnalysis:
             minimum_fold = min(live_folds)
             maximum_fold = max(live_folds)
             average_fold = sum(live_folds) / live_bins
+
+        self._print_fold_distribution(live_folds)
 
         # TODO:
         # Replace the temporary Design Fold with a geometry-derived
@@ -90,3 +95,71 @@ class TrueFoldAnalysis:
             live_bins=live_bins,
             dead_bins=dead_bins,
         )
+
+    #################################################################
+
+    def _percentile(self, sorted_values, fraction):
+        if not sorted_values:
+            return 0.0
+
+        if fraction <= 0.0:
+            return float(sorted_values[0])
+
+        if fraction >= 1.0:
+            return float(sorted_values[-1])
+
+        position = (len(sorted_values) - 1) * fraction
+        lower_index = math.floor(position)
+        upper_index = math.ceil(position)
+
+        if lower_index == upper_index:
+            return float(sorted_values[lower_index])
+
+        weight = position - lower_index
+        lower_value = sorted_values[lower_index]
+        upper_value = sorted_values[upper_index]
+
+        return lower_value + (upper_value - lower_value) * weight
+
+    #################################################################
+
+    def _print_fold_distribution(self, live_folds):
+        values = sorted(live_folds)
+
+        minimum_fold = self._percentile(values, 0.00)
+        p05 = self._percentile(values, 0.05)
+        p10 = self._percentile(values, 0.10)
+        p25 = self._percentile(values, 0.25)
+        median = self._percentile(values, 0.50)
+        average = (sum(values) / len(values)) if values else 0.0
+        p75 = self._percentile(values, 0.75)
+        p90 = self._percentile(values, 0.90)
+        p95 = self._percentile(values, 0.95)
+        maximum_fold = self._percentile(values, 1.00)
+
+        fold_eq_1 = sum(1 for fold in values if fold == 1)
+        fold_2_5 = sum(1 for fold in values if 2 <= fold <= 5)
+        fold_6_10 = sum(1 for fold in values if 6 <= fold <= 10)
+        fold_11_20 = sum(1 for fold in values if 11 <= fold <= 20)
+        fold_gt_20 = sum(1 for fold in values if fold > 20)
+
+        print("==================================================")
+        print("FOLD DISTRIBUTION")
+        print("==================================================")
+        print(f"Minimum Fold : {minimum_fold:.1f}")
+        print(f"5%           : {p05:.1f}")
+        print(f"10%          : {p10:.1f}")
+        print(f"25%          : {p25:.1f}")
+        print(f"Median       : {median:.1f}")
+        print(f"Average      : {average:.1f}")
+        print(f"75%          : {p75:.1f}")
+        print(f"90%          : {p90:.1f}")
+        print(f"95%          : {p95:.1f}")
+        print(f"Maximum      : {maximum_fold:.1f}")
+        print("-----------------------------------------")
+        print(f"Fold=1       : {fold_eq_1}")
+        print(f"Fold 2-5     : {fold_2_5}")
+        print(f"Fold 6-10    : {fold_6_10}")
+        print(f"Fold 11-20   : {fold_11_20}")
+        print(f"Fold>20      : {fold_gt_20}")
+        print("==================================================")

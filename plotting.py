@@ -7,16 +7,18 @@ Geometry Plotter
 """
 
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 
 class Plotter:
 
     """Creates and manages survey figures for interactive use and automated pipelines."""
 
-    def __init__(self, gis, geometry):
+    def __init__(self, gis, geometry, cmp_grid=None):
 
         self.gis = gis
         self.geometry = geometry
+        self.cmp_grid = cmp_grid
 
     ##################################################################
 
@@ -30,12 +32,101 @@ class Plotter:
 
             if save_path is not None:
                 fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+                self._save_geometry_validation_figure(save_path, dpi)
 
             if show:
                 plt.show()
 
         finally:
             plt.close(fig)
+
+    ##################################################################
+
+    def _save_geometry_validation_figure(self, save_path, dpi):
+
+        validation_path = Path(save_path).with_name("geometry_validation.png")
+
+        fig, ax = plt.subplots(figsize=(10, 10))
+
+        try:
+            self._draw_geometry_validation(ax)
+            fig.savefig(validation_path, dpi=dpi, bbox_inches="tight")
+        finally:
+            plt.close(fig)
+
+    ##################################################################
+
+    def _draw_geometry_validation(self, ax):
+
+        self.gis.boundary.boundary.plot(
+            ax=ax,
+            color="black",
+            linewidth=2.5,
+            zorder=5,
+            label="Survey Boundary",
+        )
+
+        receiver_x = [receiver.x for receiver in self.geometry.receivers]
+        receiver_y = [receiver.y for receiver in self.geometry.receivers]
+
+        ax.scatter(
+            receiver_x,
+            receiver_y,
+            s=10,
+            marker="o",
+            color="blue",
+            alpha=0.5,
+            linewidths=0,
+            label="Receivers",
+            zorder=2,
+        )
+
+        shot_x = [shot.x for shot in self.geometry.shots]
+        shot_y = [shot.y for shot in self.geometry.shots]
+
+        ax.scatter(
+            shot_x,
+            shot_y,
+            s=10,
+            marker=".",
+            color="red",
+            alpha=0.5,
+            linewidths=0,
+            label="Shots",
+            zorder=3,
+        )
+
+        live_cmp_x = []
+        live_cmp_y = []
+
+        cmp_grid = self.cmp_grid
+
+        if cmp_grid is not None:
+            for bin_record in getattr(cmp_grid, "bins", []):
+                if getattr(bin_record, "trace_count", 0) > 0:
+                    live_cmp_x.append(bin_record.xy[0])
+                    live_cmp_y.append(bin_record.xy[1])
+
+        ax.scatter(
+            live_cmp_x,
+            live_cmp_y,
+            s=4,
+            marker=".",
+            color="green",
+            alpha=0.7,
+            linewidths=0,
+            label="Live CMPs",
+            zorder=4,
+        )
+
+        ax.set_title("FantaSeis Geometry Validation", fontsize=13)
+        ax.set_xlabel("X Coordinate")
+        ax.set_ylabel("Y Coordinate")
+        ax.set_aspect("equal")
+        ax.grid(True, linestyle="--", linewidth=0.4)
+        ax.legend(loc="upper right")
+
+        plt.tight_layout()
 
     ##################################################################
 

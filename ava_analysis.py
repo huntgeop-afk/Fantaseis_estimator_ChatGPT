@@ -52,7 +52,6 @@ class AVAAnalysis:
         if trace_count == 0:
             maximum_incidence_angle = self._incidence_angle(0.0)
             meets_requirement = maximum_incidence_angle >= self.required_angle_deg
-            self._print_validation(0.0, maximum_incidence_angle, meets_requirement)
 
             return AVASummary(
                 maximum_offset=0.0,
@@ -65,7 +64,6 @@ class AVAAnalysis:
         maximum_incidence_angle = self._incidence_angle(maximum_offset)
 
         meets_requirement = maximum_incidence_angle >= self.required_angle_deg
-        self._print_validation(maximum_offset, maximum_incidence_angle, meets_requirement)
 
         return AVASummary(
             maximum_offset=maximum_offset,
@@ -81,15 +79,3 @@ class AVAAnalysis:
         return math.degrees(
             math.atan(offset / (2.0 * self.target_depth))
         )
-
-    #################################################################
-
-    def _print_validation(self, maximum_offset, maximum_angle, meets_requirement):
-        print("==================================================")
-        print("AVA VALIDATION")
-        print("==================================================")
-        print(f"Target Depth          : {self.target_depth:.0f} ft")
-        print(f"Maximum Offset        : {maximum_offset:.0f} ft")
-        print(f"Maximum Angle         : {maximum_angle:.1f}\N{DEGREE SIGN}")
-        print(f"Required Angle        : {self.required_angle_deg:.1f}\N{DEGREE SIGN}")
-        print(f"Pass                  : {meets_requirement}")

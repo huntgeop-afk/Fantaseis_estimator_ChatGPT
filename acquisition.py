@@ -29,7 +29,7 @@ class AcquisitionSimulator:
 
         first_receiver_line, last_receiver_line = self.shot_patch_lookup[key]
 
-        return [
+        active_receivers = [
             receiver
             for receiver in self.geometry.receivers
             if (
@@ -38,6 +38,8 @@ class AcquisitionSimulator:
                 <= last_receiver_line
             )
         ]
+
+        return active_receivers
 
     #################################################################
 

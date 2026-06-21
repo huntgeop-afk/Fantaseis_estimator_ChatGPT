@@ -21,6 +21,7 @@ class Survey:
 
     source_line_spacing: float
     shot_interval: float
+    processing_bin_size: float
 
     #
     # Acquisition
@@ -158,6 +159,7 @@ class Survey:
 
             f"Source Line Spacing   : {self.source_line_spacing:.1f} ft",
             f"Shot Interval         : {self.shot_interval:.1f} ft",
+            f"Processing Bin Size   : {self.processing_bin_size:.1f} ft",
 
             "",
 
