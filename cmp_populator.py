@@ -26,6 +26,8 @@ class CMPPopulator:
 
         accepted_traces = 0
         rejected_traces = 0
+        total_shots_processed = 0
+        total_active_receivers = 0
 
         x_centers, y_centers, bin_lookup = self._build_bin_lookup()
 
@@ -38,15 +40,19 @@ class CMPPopulator:
             else:
                 active_receivers = self.geometry.receivers
 
-            for receiver in active_receivers:
-                if not receiver.inside_boundary:
-                    continue
+            total_shots_processed += 1
+            total_active_receivers += len(active_receivers)
 
+            for receiver in active_receivers:
                 dx = receiver.x - shot.x
                 dy = receiver.y - shot.y
 
                 midpoint_x = (shot.x + receiver.x) / 2.0
                 midpoint_y = (shot.y + receiver.y) / 2.0
+
+                if not self.geometry._point_inside_boundary(midpoint_x, midpoint_y):
+                    continue
+
                 offset = math.hypot(dx, dy)
 
                 if offset > maximum_offset:
@@ -79,9 +85,22 @@ class CMPPopulator:
                 bin_record.trace_count += 1
                 accepted_traces += 1
 
-            print(f"Accepted traces : {accepted_traces}")
-            print(f"Rejected traces : {rejected_traces}")
-            print(f"Maximum offset allowed : {maximum_offset:.0f} ft")
+        average_active_receivers = total_active_receivers / max(1, total_shots_processed)
+        theoretical_trace_count = total_active_receivers
+        acceptance_percentage = (
+            100.0 * accepted_traces / max(1, accepted_traces + rejected_traces)
+        )
+
+        print("==================================================")
+        print("TRACE GENERATION SUMMARY")
+        print("==================================================")
+        print(f"Shots Processed           : {total_shots_processed}")
+        print(f"Average Active Receivers  : {average_active_receivers:.0f}")
+        print(f"Theoretical Trace Count   : {theoretical_trace_count}")
+        print(f"Accepted Trace Count      : {accepted_traces}")
+        print(f"Rejected Trace Count      : {rejected_traces}")
+        print(f"Acceptance Percentage     : {acceptance_percentage:.2f} %")
+        print(f"Maximum Offset Allowed    : {maximum_offset:.0f} ft")
 
         return self.cmp_grid
 
