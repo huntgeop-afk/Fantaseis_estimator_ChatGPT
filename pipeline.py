@@ -25,6 +25,7 @@ from offset_heatmap import OffsetHeatMap
 from azimuth_rose import AzimuthRose
 
 from true_fold_analysis import TrueFoldAnalysis
+from offset_analysis import OffsetAnalysis
 from offset_distribution import OffsetDistributionAnalysis
 from azimuth_analysis import AzimuthAnalysis
 from ava_analysis import AVAAnalysis
@@ -211,11 +212,13 @@ class SurveyPipeline:
         results_dir = self._results_directory()
 
         print("Generating Figures...")
+        offset_analysis = OffsetAnalysis(survey, cmp_grid=cmp_grid)
         self._generate_figures(
             results_dir,
             gis,
             geometry,
             cmp_grid,
+            offset_analysis,
         )
 
         self._log("Saving optimization_report.txt")
@@ -287,7 +290,7 @@ class SurveyPipeline:
 
     #################################################################
 
-    def _generate_figures(self, results_dir, gis, geometry, cmp_grid):
+    def _generate_figures(self, results_dir, gis, geometry, cmp_grid, offset_analysis):
         plotter = Plotter(gis, geometry, cmp_grid)
 
         self._run_step(
@@ -305,6 +308,13 @@ class SurveyPipeline:
             "offset_heatmap",
             results_dir / "offset_heatmap.png",
             lambda: OffsetHeatMap(cmp_grid, gis).plot(),
+        )
+
+        print("Saving offset_distribution.png")
+        self._save_figure(
+            "offset_distribution",
+            results_dir / "offset_distribution.png",
+            offset_analysis.plot_offset_distribution,
         )
 
         self._save_figure(
