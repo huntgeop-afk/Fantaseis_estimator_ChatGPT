@@ -14,23 +14,35 @@ class AcquisitionSimulator:
         self.survey = survey
         self.geometry = geometry
         self.state = SurveyState()
+        self.shot_patch_lookup = {}
 
     #################################################################
 
     def active_receivers_for_shot(self, shot):
+        key = (shot.line, shot.station)
+
+        if key not in self.shot_patch_lookup:
+            raise KeyError(
+                "No active receiver patch recorded for "
+                f"shot line {shot.line}, station {shot.station}."
+            )
+
+        first_receiver_line, last_receiver_line = self.shot_patch_lookup[key]
+
         return [
             receiver
             for receiver in self.geometry.receivers
             if (
-                self.state.first_active_receiver_line
+                first_receiver_line
                 <= receiver.line
-                <= self.state.last_active_receiver_line
+                <= last_receiver_line
             )
         ]
 
     #################################################################
 
     def generate_schedule(self):
+        self.shot_patch_lookup = {}
         self.state.begin_survey()
         self.state.first_active_receiver_line = 1
         self.state.last_active_receiver_line = self.survey.active_receiver_lines
@@ -108,6 +120,12 @@ class AcquisitionSimulator:
 
             first_source = line_sequence[0]
             last_source = line_sequence[-1]
+
+            for source_line in line_sequence:
+                self.shot_patch_lookup[(source_line, shot_station)] = (
+                    self.state.first_active_receiver_line,
+                    self.state.last_active_receiver_line,
+                )
 
             events.append(
                 AcquisitionEvent(
