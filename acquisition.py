@@ -17,6 +17,19 @@ class AcquisitionSimulator:
 
     #################################################################
 
+    def active_receivers_for_shot(self, shot):
+        return [
+            receiver
+            for receiver in self.geometry.receivers
+            if (
+                self.state.first_active_receiver_line
+                <= receiver.line
+                <= self.state.last_active_receiver_line
+            )
+        ]
+
+    #################################################################
+
     def generate_schedule(self):
         self.state.begin_survey()
         self.state.first_active_receiver_line = 1
