@@ -5,6 +5,7 @@ from dataclasses import dataclass
 class TrueFoldSummary:
     """Stores true spatial fold statistics derived from populated CMP bins."""
 
+    design_fold: float
     minimum_fold: int
     maximum_fold: int
     average_fold: float
@@ -15,14 +16,24 @@ class TrueFoldSummary:
     #################################################################
 
     def summary(self):
+        coverage_percent = (
+            (self.live_bins / self.total_bins) * 100.0
+            if self.total_bins > 0
+            else 0.0
+        )
+
         return "\n".join([
-            "True Spatial Fold",
-            f"Minimum Fold : {self.minimum_fold}",
-            f"Average Fold : {self.average_fold:.1f}",
-            f"Maximum Fold : {self.maximum_fold}",
-            f"Live CMP Bins : {self.live_bins}",
-            f"Dead CMP Bins : {self.dead_bins}",
-            f"Total CMP Bins : {self.total_bins}",
+            "==================================================",
+            "TRUE FOLD SUMMARY",
+            "==================================================",
+            f"Design Fold (temporary) : {self.design_fold:.1f}",
+            f"Minimum True Fold       : {self.minimum_fold:.1f}",
+            f"Average True Fold       : {self.average_fold:.1f}",
+            f"Maximum True Fold       : {self.maximum_fold:.1f}",
+            f"Live CMP Bins           : {self.live_bins}",
+            f"Dead CMP Bins           : {self.dead_bins}",
+            f"Coverage                : {coverage_percent:.1f} %",
+            "==================================================",
         ])
 
 
@@ -39,6 +50,7 @@ class TrueFoldAnalysis:
 
         if not bins:
             return TrueFoldSummary(
+                design_fold=0.0,
                 minimum_fold=0,
                 maximum_fold=0,
                 average_fold=0.0,
@@ -60,9 +72,17 @@ class TrueFoldAnalysis:
             live_folds = [fold for fold in folds if fold > 0]
             minimum_fold = min(live_folds)
             maximum_fold = max(live_folds)
-            average_fold = sum(folds) / total_bins
+            average_fold = sum(live_folds) / live_bins
+
+        # TODO:
+        # Replace the temporary Design Fold with a geometry-derived
+        # design-fold calculation based on the actual acquisition
+        # geometry and receiver patch, rather than a textbook
+        # orthogonal-survey equation.
+        design_fold = average_fold
 
         return TrueFoldSummary(
+            design_fold=design_fold,
             minimum_fold=minimum_fold,
             maximum_fold=maximum_fold,
             average_fold=average_fold,
