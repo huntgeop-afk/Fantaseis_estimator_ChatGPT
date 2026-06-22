@@ -2,6 +2,8 @@ import sys
 from pipeline import SurveyPipeline
 from qc_report import QCReport
 from config import DEBUG
+from optimizer import GridSearchOptimizer
+from optimization_diagnostics import OptimizationDiagnostics
 
 
 def main():
@@ -27,6 +29,13 @@ def main():
     print("Generating QC Report...")
     qc_report_text = QCReport(results).generate()
     print(qc_report_text, end="")
+
+    optimizer = GridSearchOptimizer(project_folder)
+    optimizer.run()
+
+    diagnostics = OptimizationDiagnostics(project_folder)
+    diagnostics.run()
+
     print("Survey Completed Successfully.")
 
 
