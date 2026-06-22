@@ -58,35 +58,35 @@ DEFAULT_OPTIMIZATION_RANGES = {
 DEFAULT_OPTIMIZATION_CONFIG = {
     "search_space": {
         "receiver_interval": {
-            "mode": "fixed",
+            "mode": "optimize",
             "value": 165.0,
             "minimum": 110.0,
             "maximum": 220.0,
-            "increment": 55.0,
+            "increment": 20.0,
         },
         "receiver_line_spacing": {
-            "mode": "fixed",
+            "mode": "optimize",
             "value": 550.0,
             "minimum": 440.0,
-            "maximum": 770.0,
-            "increment": 110.0,
+            "maximum": 880.0,
+            "increment": 20.0,
         },
         "shot_interval": {
-            "mode": "fixed",
+            "mode": "optimize",
             "value": 220.0,
             "minimum": 110.0,
             "maximum": 330.0,
-            "increment": 55.0,
+            "increment": 20.0,
         },
         "source_line_spacing": {
-            "mode": "fixed",
+            "mode": "optimize",
             "value": 660.0,
             "minimum": 440.0,
             "maximum": 880.0,
-            "increment": 110.0,
+            "increment": 20.0,
         },
         "active_receiver_lines": {
-            "mode": "fixed",
+            "mode": "optimize",
             "value": 12,
             "minimum": 8,
             "maximum": 20,
@@ -100,8 +100,8 @@ DEFAULT_OPTIMIZATION_CONFIG = {
         "orientation_coverage_min_deg": 120.0,
     },
     "limits": {
-        "acquisition_days_max": 365.0,
-        "node_count_max": 20000,
+        "acquisition_days_max": 21.0,
+        "node_count_max": 2000.0,
     },
 }
 
@@ -640,18 +640,10 @@ class GridSearchOptimizer:
             node_weight_kg=self.business_model.node_logistics.node_weight_lb * 0.45359237,
             empty_pallet_weight_kg=self.business_model.node_logistics.pallet_weight_lb * 0.45359237,
             maximum_payload_per_pallet_kg=self.business_model.node_logistics.maximum_payload_per_pallet_lb * 0.45359237,
+            active_receiver_nodes=geometry.receiver_count,
         )
         shipping = self.business_model.node_shipping_options(geometry.receiver_count, gis)
-        mobilization_cost = self.business_model.mobilization_cost(gis)
         field_days = production_summary.critical_path_days
-        transport_cost = (
-            mobilization_cost
-            + shipping["selected_shipping_cost"]
-            + self.business_model.hotel_cost(field_days)
-            + self.business_model.per_diem_cost(field_days)
-            + self.business_model.total_equipment_cost(field_days)
-            + self.business_model.total_crew_cost(field_days)
-        )
 
         scenario = LogisticsScenario(
             name="Default",
@@ -662,11 +654,7 @@ class GridSearchOptimizer:
             return_days_min=shipping["selected_return_days"],
             return_days_most_likely=shipping["selected_return_days"],
             return_days_max=shipping["selected_return_days"],
-            transport_cost=transport_cost,
-            crew_members=0,
-            crew_daily_cost=0.0,
-            vehicle_cost_per_mile=0.0,
-            round_trip_miles=0.0,
+            shipping_details=shipping,
         )
         logistics_summary = LogisticsModel(inventory, scenario).estimate(
             production_summary.critical_path_days

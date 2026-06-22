@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import math
 
 
 @dataclass
@@ -10,25 +9,19 @@ class EquipmentInventory:
     node_weight_kg: float
     empty_pallet_weight_kg: float
     maximum_payload_per_pallet_kg: float
+    active_receiver_nodes: int | None = None
 
     #################################################################
 
-    def pallet_count(self):
-        if self.maximum_payload_per_pallet_kg <= 0:
-            raise ValueError("maximum_payload_per_pallet_kg must be greater than zero")
-
-        return math.ceil(self.total_node_weight() / self.maximum_payload_per_pallet_kg)
+    def active_receiver_count(self):
+        if self.active_receiver_nodes is not None:
+            return int(self.active_receiver_nodes)
+        return int(self.receiver_nodes)
 
     #################################################################
 
     def total_node_weight(self):
-        return self.receiver_nodes * self.node_weight_kg
-
-    #################################################################
-
-    def total_shipping_weight(self):
-        pallets = self.pallet_count()
-        return self.total_node_weight() + pallets * self.empty_pallet_weight_kg
+        return self.active_receiver_count() * self.node_weight_kg
 
 
 @dataclass
@@ -43,11 +36,7 @@ class LogisticsScenario:
     return_days_min: float
     return_days_most_likely: float
     return_days_max: float
-    transport_cost: float
-    crew_members: int
-    crew_daily_cost: float
-    vehicle_cost_per_mile: float
-    round_trip_miles: float
+    shipping_details: dict
 
 
 @dataclass
@@ -96,8 +85,10 @@ class LogisticsModel:
     #################################################################
 
     def estimate(self, field_days):
-        shipping_weight_kg = self.inventory.total_shipping_weight()
-        pallet_count = self.inventory.pallet_count()
+        shipping_details = dict(self.scenario.shipping_details)
+        shipping_weight_lb = float(shipping_details.get("total_weight_lb", 0.0))
+        shipping_weight_kg = shipping_weight_lb * 0.45359237
+        pallet_count = int(shipping_details.get("pallet_count", 0))
 
         expected_outbound_days = self._triangular_expected(
             self.scenario.outbound_days_min,
@@ -114,19 +105,10 @@ class LogisticsModel:
         expected_total_transit_days = expected_outbound_days + expected_return_days
         expected_node_rental_days = field_days + expected_total_transit_days
 
-        crew_cost = (
-            self.scenario.crew_members *
-            self.scenario.crew_daily_cost *
-            expected_total_transit_days
-        )
-
-        vehicle_cost = self.scenario.vehicle_cost_per_mile * self.scenario.round_trip_miles
-
-        total_logistics_cost = (
-            self.scenario.transport_cost +
-            crew_cost +
-            vehicle_cost
-        )
+        transport_cost = float(shipping_details.get("selected_shipping_cost", 0.0))
+        crew_cost = 0.0
+        vehicle_cost = 0.0
+        total_logistics_cost = transport_cost
 
         return LogisticsSummary(
             shipping_weight_kg=shipping_weight_kg,
@@ -134,7 +116,7 @@ class LogisticsModel:
             expected_outbound_days=expected_outbound_days,
             expected_return_days=expected_return_days,
             expected_total_transit_days=expected_total_transit_days,
-            transport_cost=self.scenario.transport_cost,
+            transport_cost=transport_cost,
             crew_cost=crew_cost,
             vehicle_cost=vehicle_cost,
             total_logistics_cost=total_logistics_cost,

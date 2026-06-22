@@ -5,10 +5,10 @@
     "node_pickups_per_day": 800
   },
   "crew": {
-    "crew_chief_daily_rate": 850.0,
-    "node_team_members": 4,
-    "node_team_daily_rate_per_person": 500.0,
-    "traffic_control_personnel": 2,
+    "crew_chief_daily_rate": 750.0,
+    "node_team_members": 3,
+    "node_team_daily_rate_per_person": 600.0,
+    "traffic_control_personnel": 0,
     "traffic_control_daily_rate_per_person": 350.0
   },
   "mobilization": {
@@ -16,7 +16,7 @@
     "home_base_latitude": 39.1031,
     "home_base_longitude": -84.512,
     "one_way_mobilization_distance_miles": null,
-    "mileage_rate_per_mile": 0.75,
+    "mileage_rate_per_mile": 1.50,
     "round_trip": true,
     "road_factor": 1.2
   },
@@ -26,18 +26,18 @@
     "per_diem_per_contractor_per_day": 65.0
   },
   "equipment": {
-    "source_equipment_daily_cost": 1800.0,
-    "support_equipment_daily_cost": 900.0,
-    "truck_daily_cost": 250.0,
-    "insurance_daily_allocation": 200.0,
-    "maintenance_daily_allocation": 140.0,
-    "miscellaneous_daily_overhead": 125.0
+    "source_equipment_daily_cost": 300.0,
+    "support_equipment_daily_cost": 250.0,
+    "truck_daily_cost": 100.0,
+    "insurance_daily_allocation": 50.0,
+    "maintenance_daily_allocation": 50.0,
+    "miscellaneous_daily_overhead": 50.0
   },
   "node_logistics": {
     "node_rental_per_node_day": 1.25,
     "node_weight_lb": 2.205,
-    "pallet_weight_lb": 77.16,
-    "maximum_payload_per_pallet_lb": 1102.31,
+    "pallet_weight_lb": 40.0,
+    "maximum_payload_per_pallet_lb": 500.0,
     "commercial_shipping_cost_per_pound": 0.28,
     "commercial_shipping_days": 2.0,
     "owner_pickup_enabled": true,

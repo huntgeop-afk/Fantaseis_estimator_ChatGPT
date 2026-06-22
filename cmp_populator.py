@@ -18,11 +18,6 @@ class CMPPopulator:
             self.acquisition.generate_schedule()
 
         survey = self.acquisition.survey
-        maximum_offset = (
-            2.0
-            * survey.target_depth
-            * math.tan(math.radians(survey.maximum_incidence_angle))
-        )
 
         accepted_traces = 0
         rejected_traces = 0
@@ -31,6 +26,7 @@ class CMPPopulator:
         valid_bin_assignments = 0
         invalid_bin_assignments = 0
         populated_bin_keys = set()
+        shot_offset_audit = {}
 
         x_centers, y_centers, bin_lookup = self._build_bin_lookup()
 
@@ -53,14 +49,22 @@ class CMPPopulator:
                 midpoint_x = (shot.x + receiver.x) / 2.0
                 midpoint_y = (shot.y + receiver.y) / 2.0
 
-                if not self.geometry._point_inside_boundary(midpoint_x, midpoint_y):
-                    continue
-
                 offset = math.hypot(dx, dy)
 
-                if offset > maximum_offset:
-                    rejected_traces += 1
-                    continue
+                shot_data = shot_offset_audit.setdefault(
+                    shot.id,
+                    {
+                        "shot": shot,
+                        "active_count": len(active_receivers),
+                        "theoretical_max": 0.0,
+                        "theoretical_min": None,
+                        "generated_offsets": [],
+                    },
+                )
+                if offset > shot_data["theoretical_max"]:
+                    shot_data["theoretical_max"] = offset
+                if shot_data["theoretical_min"] is None or offset < shot_data["theoretical_min"]:
+                    shot_data["theoretical_min"] = offset
 
                 azimuth_deg = math.degrees(math.atan2(dy, dx))
                 if azimuth_deg < 0.0:
@@ -104,6 +108,7 @@ class CMPPopulator:
 
                 traces = self._trace_bucket(bin_record)
                 traces.append(trace)
+                shot_data["generated_offsets"].append(offset)
                 bin_record.trace_count += 1
                 accepted_traces += 1
                 populated_bin_keys.add(bin_record.xy)
@@ -133,7 +138,77 @@ class CMPPopulator:
         print(f"Invalid Bin Assignments   : {invalid_bin_assignments}")
         print("==================================================")
 
+        self._print_live_receiver_patch_audit(shot_offset_audit)
+
         return self.cmp_grid
+
+    #################################################################
+
+    def _print_live_receiver_patch_audit(self, shot_offset_audit):
+        if not shot_offset_audit:
+            return
+
+        survey = self.acquisition.survey
+        representative_ids = self._representative_shot_ids(shot_offset_audit)
+
+        print("==================================================")
+        print("LIVE RECEIVER PATCH AUDIT")
+        print("==================================================")
+
+        for shot_id in representative_ids:
+            shot_data = shot_offset_audit[shot_id]
+            shot = shot_data["shot"]
+
+            first_line, last_line = self.acquisition.shot_patch_lookup[(shot.line, shot.station)]
+            active_receivers = self.acquisition.active_receivers_for_shot(shot)
+            line_numbers = sorted({receiver.line for receiver in active_receivers})
+            stations_per_line = 0
+            if line_numbers:
+                stations_per_line = sum(1 for receiver in active_receivers if receiver.line == line_numbers[0])
+
+            expected_traces = len(line_numbers) * stations_per_line
+            generated_offsets = shot_data["generated_offsets"]
+            generated_min = min(generated_offsets) if generated_offsets else 0.0
+            generated_max = max(generated_offsets) if generated_offsets else 0.0
+            theoretical_max = shot_data["theoretical_max"]
+            difference = theoretical_max - generated_max
+
+            status = "PASS" if (len(generated_offsets) == expected_traces and abs(difference) <= 1.0) else "FAIL"
+
+            print(f"Shot Number                  : {shot.id}")
+            print(f"Shot X                       : {shot.x:.2f}")
+            print(f"Shot Y                       : {shot.y:.2f}")
+            print(f"First Active Receiver Line   : {first_line}")
+            print(f"Last Active Receiver Line    : {last_line}")
+            print(f"Number of Active Receiver Lines : {len(line_numbers)}")
+            print(f"Receiver Stations per Line   : {stations_per_line}")
+            print(f"Total Active Receivers       : {len(active_receivers)}")
+            print(f"Minimum Offset               : {generated_min:.2f}")
+            print(f"Maximum Offset               : {generated_max:.2f}")
+            print(f"Theoretical Maximum Offset   : {theoretical_max:.2f}")
+            print(f"Difference                   : {difference:.2f}")
+            print(f"PASS / FAIL                  : {status}")
+            print("--------------------------------------------------")
+
+        print("==================================================")
+
+    #################################################################
+
+    def _representative_shot_ids(self, shot_offset_audit):
+        ordered_ids = sorted(shot_offset_audit)
+        if len(ordered_ids) <= 3:
+            return ordered_ids
+
+        first_id = ordered_ids[0]
+        middle_id = ordered_ids[len(ordered_ids) // 2]
+        last_id = ordered_ids[-1]
+
+        representative = []
+        for shot_id in [first_id, middle_id, last_id]:
+            if shot_id not in representative:
+                representative.append(shot_id)
+
+        return representative
 
     #################################################################
 

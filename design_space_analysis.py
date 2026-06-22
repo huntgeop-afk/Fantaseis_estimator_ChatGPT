@@ -190,17 +190,10 @@ class DesignSpaceAnalysis:
             node_weight_kg=self.business_model.node_logistics.node_weight_lb * 0.45359237,
             empty_pallet_weight_kg=self.business_model.node_logistics.pallet_weight_lb * 0.45359237,
             maximum_payload_per_pallet_kg=self.business_model.node_logistics.maximum_payload_per_pallet_lb * 0.45359237,
+            active_receiver_nodes=geometry.receiver_count,
         )
         shipping = self.business_model.node_shipping_options(geometry.receiver_count, gis)
         field_days = production_summary.critical_path_days
-        transport_cost = (
-            self.business_model.mobilization_cost(gis)
-            + shipping["selected_shipping_cost"]
-            + self.business_model.hotel_cost(field_days)
-            + self.business_model.per_diem_cost(field_days)
-            + self.business_model.total_equipment_cost(field_days)
-            + self.business_model.total_crew_cost(field_days)
-        )
 
         scenario = LogisticsScenario(
             name="Default",
@@ -211,11 +204,7 @@ class DesignSpaceAnalysis:
             return_days_min=shipping["selected_return_days"],
             return_days_most_likely=shipping["selected_return_days"],
             return_days_max=shipping["selected_return_days"],
-            transport_cost=transport_cost,
-            crew_members=0,
-            crew_daily_cost=0.0,
-            vehicle_cost_per_mile=0.0,
-            round_trip_miles=0.0,
+            shipping_details=shipping,
         )
         logistics_summary = LogisticsModel(inventory, scenario).estimate(production_summary.critical_path_days)
         node_rental_summary = NodeRentalModel(
