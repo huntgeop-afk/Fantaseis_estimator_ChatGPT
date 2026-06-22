@@ -1,5 +1,6 @@
 import csv
 import json
+import math
 from collections import defaultdict
 from pathlib import Path
 
@@ -284,8 +285,7 @@ class AdaptiveSearch:
     def _variable_ranges(self):
         ranges = {}
         for key in self.VARIABLE_KEYS:
-            values = self.search_space.get(key, [getattr(self.base_survey, key)])
-            values = [float(value) for value in values]
+            values = self._values_for_key(key)
             if not values:
                 ranges[key] = 1.0
                 continue
@@ -294,6 +294,50 @@ class AdaptiveSearch:
             ranges[key] = value_range if value_range > 0.0 else 1.0
 
         return ranges
+
+    #################################################################
+
+    def _values_for_key(self, key):
+        spec = self.search_space.get(key)
+
+        if spec is None:
+            return [float(getattr(self.base_survey, key))]
+
+        if isinstance(spec, list):
+            return [float(value) for value in spec]
+
+        if isinstance(spec, (int, float)):
+            return [float(spec)]
+
+        if isinstance(spec, dict):
+            mode = str(spec.get("mode", "fixed")).strip().lower()
+
+            if mode == "fixed":
+                value = spec.get("value", getattr(self.base_survey, key))
+                return [float(value)]
+
+            minimum = float(spec.get("minimum", getattr(self.base_survey, key)))
+            maximum = float(spec.get("maximum", getattr(self.base_survey, key)))
+            increment = float(spec.get("increment", 1.0))
+
+            if increment <= 0.0 or maximum < minimum:
+                return [float(getattr(self.base_survey, key))]
+
+            values = []
+            current = minimum
+            while current <= maximum + 1.0e-9:
+                values.append(float(round(current, 10)))
+                current += increment
+
+            if values and maximum - values[-1] > 1.0e-8:
+                values.append(float(maximum))
+
+            if not values:
+                values = [float(getattr(self.base_survey, key))]
+
+            return values
+
+        return [float(getattr(self.base_survey, key))]
 
     #################################################################
 

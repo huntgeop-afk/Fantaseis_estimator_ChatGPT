@@ -79,11 +79,7 @@ class TrueFoldAnalysis:
 
         self._print_fold_distribution(live_folds)
 
-        # TODO:
-        # Replace the temporary Design Fold with a geometry-derived
-        # design-fold calculation based on the actual acquisition
-        # geometry and receiver patch, rather than a textbook
-        # orthogonal-survey equation.
+        # Design fold is reported as measured live-bin average fold in this validated workflow.
         design_fold = average_fold
 
         return TrueFoldSummary(

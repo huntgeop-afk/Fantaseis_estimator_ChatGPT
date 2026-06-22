@@ -202,6 +202,69 @@ class OffsetAnalysis:
 
     #################################################################
 
+    def print_offset_validation(self):
+        """Print offset validation report using actual accepted trace offsets."""
+        offsets = self._accepted_offsets()
+
+        if not offsets:
+            print("==================================================")
+            print("OFFSET VALIDATION")
+            print("==================================================")
+            print("Accepted Traces           : 0")
+            print("==================================================")
+            return
+
+        offsets.sort()
+
+        minimum_offset = offsets[0]
+        maximum_offset = offsets[-1]
+        average_offset = math.fsum(offsets) / len(offsets)
+
+        median_offset = self._percentile(offsets, 0.50)
+        p05_offset = self._percentile(offsets, 0.05)
+        p10_offset = self._percentile(offsets, 0.10)
+        p25_offset = self._percentile(offsets, 0.25)
+        p75_offset = self._percentile(offsets, 0.75)
+        p90_offset = self._percentile(offsets, 0.90)
+        p95_offset = self._percentile(offsets, 0.95)
+
+        traces_lt_500 = sum(1 for v in offsets if v < 500.0)
+        traces_500_1000 = sum(1 for v in offsets if 500.0 <= v < 1000.0)
+        traces_1000_2000 = sum(1 for v in offsets if 1000.0 <= v < 2000.0)
+        traces_2000_3000 = sum(1 for v in offsets if 2000.0 <= v < 3000.0)
+        traces_3000_4000 = sum(1 for v in offsets if 3000.0 <= v < 4000.0)
+        traces_4000_5000 = sum(1 for v in offsets if 4000.0 <= v < 5000.0)
+        traces_5000_6000 = sum(1 for v in offsets if 5000.0 <= v < 6000.0)
+        traces_6000_7000 = sum(1 for v in offsets if 6000.0 <= v < 7000.0)
+        traces_gt_7000 = sum(1 for v in offsets if v >= 7000.0)
+
+        print("==================================================")
+        print("OFFSET VALIDATION")
+        print("==================================================")
+        print(f"Accepted Traces           : {len(offsets)}")
+        print(f"Minimum Offset            : {minimum_offset:.0f} ft")
+        print(f"Maximum Offset            : {maximum_offset:.0f} ft")
+        print(f"Average Offset            : {average_offset:.0f} ft")
+        print(f"Median Offset             : {median_offset:.0f} ft")
+        print(f"5 Percentile              : {p05_offset:.0f} ft")
+        print(f"10 Percentile             : {p10_offset:.0f} ft")
+        print(f"25 Percentile             : {p25_offset:.0f} ft")
+        print(f"75 Percentile             : {p75_offset:.0f} ft")
+        print(f"90 Percentile             : {p90_offset:.0f} ft")
+        print(f"95 Percentile             : {p95_offset:.0f} ft")
+        print(f"Offset < 500 ft           : {traces_lt_500}")
+        print(f"Offset 500-1000 ft        : {traces_500_1000}")
+        print(f"Offset 1000-2000 ft       : {traces_1000_2000}")
+        print(f"Offset 2000-3000 ft       : {traces_2000_3000}")
+        print(f"Offset 3000-4000 ft       : {traces_3000_4000}")
+        print(f"Offset 4000-5000 ft       : {traces_4000_5000}")
+        print(f"Offset 5000-6000 ft       : {traces_5000_6000}")
+        print(f"Offset 6000-7000 ft       : {traces_6000_7000}")
+        print(f"Offset >7000 ft           : {traces_gt_7000}")
+        print("==================================================")
+
+    #################################################################
+
     def _accepted_offsets(self):
         offsets = []
 

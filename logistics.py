@@ -7,9 +7,9 @@ class EquipmentInventory:
     """Represents transport inventory and weight assumptions for receiver nodes and pallets."""
 
     receiver_nodes: int
-    node_weight_kg: float = 1.0
-    empty_pallet_weight_kg: float = 35.0
-    maximum_payload_per_pallet_kg: float = 500.0
+    node_weight_kg: float
+    empty_pallet_weight_kg: float
+    maximum_payload_per_pallet_kg: float
 
     #################################################################
 

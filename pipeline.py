@@ -31,10 +31,14 @@ from azimuth_analysis import AzimuthAnalysis
 from ava_analysis import AVAAnalysis
 from avaz_analysis import AVAzAnalysis
 from illumination_analysis import IlluminationAnalysis
+from center_cmp_validation import CenterCMPValidation
+from survey_qc import SurveyQC
+from fold_audit_validation import FoldAuditValidation
 
 from survey_optimizer import SurveyOptimizer
 from optimization_report import OptimizationReport
 from config import DEBUG
+from business_model import BusinessModel
 
 
 @dataclass
@@ -57,15 +61,17 @@ class PipelineResults:
     illumination_summary: object
     optimization_result: object
     report_text: str
+    business_model: object
 
 
 class SurveyPipeline:
     """Orchestrates the end-to-end FantaSeis workflow using existing project modules."""
 
-    def __init__(self, project_folder, debug=DEBUG):
+    def __init__(self, project_folder, debug=DEBUG, business_model=None):
         self.project_folder = Path(project_folder)
         self.show_plots = False
         self.debug = debug
+        self.business_model = business_model if business_model is not None else BusinessModel(project_folder)
 
     #################################################################
 
@@ -100,19 +106,31 @@ class SurveyPipeline:
         self._log("Running Production Model...")
         production_summary = self._run_step(
             "Production model",
-            lambda: ProductionModel(ProductionRates()).estimate([], geometry),
+            lambda: ProductionModel(
+                ProductionRates(
+                    shots_per_day=self.business_model.production.shots_per_day,
+                    node_deployments_per_day=self.business_model.production.node_deployments_per_day,
+                    node_pickups_per_day=self.business_model.production.node_pickups_per_day,
+                )
+            ).estimate([], geometry),
         )
 
         self._log("Running Logistics Model...")
         logistics_summary = self._run_step(
             "Logistics model",
-            lambda: self._run_logistics(geometry, production_summary),
+            lambda: self._run_logistics(gis, geometry, production_summary),
         )
 
         self._log("Running Node Rental Model...")
         node_rental_summary = self._run_step(
             "Node rental model",
-            lambda: NodeRentalModel(NodeRentalRates()).estimate(
+            lambda: NodeRentalModel(
+                NodeRentalRates(
+                    daily_rental_rate=self.business_model.node_logistics.node_rental_per_node_day,
+                    prep_fee_per_node=0.0,
+                    download_fee_per_node=0.0,
+                )
+            ).estimate(
                 geometry.receiver_count,
                 logistics_summary.expected_node_rental_days,
             ),
@@ -129,6 +147,16 @@ class SurveyPipeline:
             ),
         )
 
+        print(
+            self.business_model.business_model_summary(
+                gis_project=gis,
+                acquisition_days=production_summary.critical_path_days,
+                receiver_nodes=geometry.receiver_count,
+                node_rental_days=logistics_summary.expected_node_rental_days,
+                internal_cost=cost_summary.total_project_cost,
+            )
+        )
+
         self._log("Generating CMP Grid...")
         cmp_grid = self._run_step(
             "CMP grid generation",
@@ -141,6 +169,14 @@ class SurveyPipeline:
             lambda: CMPPopulator(cmp_grid, geometry, acquisition).populate(),
         )
 
+        print("==================================================")
+        print("SURVEY QC")
+        print("==================================================")
+        qc = SurveyQC(cmp_grid, survey)
+
+        center_cmp_validation = CenterCMPValidation(cmp_grid, gis)
+        center_cmp_validation.print_center_cmp_validation()
+
         self._log("Computing Fold...")
         true_fold_summary = self._run_step(
             "True fold analysis",
@@ -148,27 +184,44 @@ class SurveyPipeline:
         )
         print(true_fold_summary.summary())
 
+        fold_audit = FoldAuditValidation(
+            cmp_grid=cmp_grid,
+            survey=survey,
+            geometry=geometry,
+            acquisition=acquisition,
+            gis=gis,
+            true_fold_summary=true_fold_summary,
+        )
+        fold_audit.run_all()
+
         self._log("Computing Offset Statistics...")
+        offset_analysis = OffsetAnalysis(survey, cmp_grid=cmp_grid)
+        offset_analysis.print_offset_validation()
+
         offset_distribution = self._run_step(
             "Offset distribution analysis",
             lambda: OffsetDistributionAnalysis(cmp_grid).analyze(),
         )
 
         self._log("Computing Azimuth Statistics...")
+        azimuth_analysis = AzimuthAnalysis(cmp_grid, geometry)
         azimuth_summary = self._run_step(
             "Azimuth analysis",
-            lambda: AzimuthAnalysis(cmp_grid).analyze(),
+            lambda: azimuth_analysis.analyze(),
         )
+        azimuth_analysis.print_azimuth_validation()
 
         self._log("Computing AVA Suitability...")
+        ava_analysis = AVAAnalysis(
+            cmp_grid,
+            survey.target_depth,
+            survey.maximum_incidence_angle,
+        )
         ava_summary = self._run_step(
             "AVA analysis",
-            lambda: AVAAnalysis(
-                cmp_grid,
-                survey.target_depth,
-                survey.maximum_incidence_angle,
-            ).analyze(),
+            lambda: ava_analysis.analyze(),
         )
+        ava_analysis.print_ava_validation()
 
         self._log("Computing AVAz Suitability...")
         avaz_summary = self._run_step(
@@ -219,6 +272,8 @@ class SurveyPipeline:
             geometry,
             cmp_grid,
             offset_analysis,
+            center_cmp_validation,
+            qc,
         )
 
         self._log("Saving optimization_report.txt")
@@ -246,6 +301,7 @@ class SurveyPipeline:
             illumination_summary=illumination_summary,
             optimization_result=optimization_result,
             report_text=report_text,
+            business_model=self.business_model,
         )
 
     #################################################################
@@ -290,7 +346,7 @@ class SurveyPipeline:
 
     #################################################################
 
-    def _generate_figures(self, results_dir, gis, geometry, cmp_grid, offset_analysis):
+    def _generate_figures(self, results_dir, gis, geometry, cmp_grid, offset_analysis, center_cmp_validation, qc):
         plotter = Plotter(gis, geometry, cmp_grid)
 
         self._run_step(
@@ -316,6 +372,45 @@ class SurveyPipeline:
             results_dir / "offset_distribution.png",
             offset_analysis.plot_offset_distribution,
         )
+
+        print("Saving azimuth_distribution.png")
+        self._run_step(
+            "azimuth_distribution",
+            lambda: plotter.plot_azimuth_distribution(save_path=results_dir / "azimuth_distribution.png"),
+        )
+
+        print("Saving orientation_distribution.png")
+        self._run_step(
+            "orientation_distribution",
+            lambda: plotter.plot_orientation_distribution(save_path=results_dir / "orientation_distribution.png"),
+        )
+
+        print("Saving center_cmp_offsets.png")
+        self._run_step(
+            "center_cmp_offsets",
+            lambda: center_cmp_validation.plot_center_cmp_offsets(save_path=results_dir / "center_cmp_offsets.png"),
+        )
+
+        print("Saving center_cmp_orientations.png")
+        self._run_step(
+            "center_cmp_orientations",
+            lambda: center_cmp_validation.plot_center_cmp_orientations(save_path=results_dir / "center_cmp_orientations.png"),
+        )
+
+        print("Generating Fold Map...")
+        fold_map_figure = qc.generate_fold_map(save_path=results_dir / "fold_map.png")
+        print("Saved fold_map.png")
+        plt.close(fold_map_figure)
+
+        print("Generating Maximum Offset Map...")
+        max_offset_figure = qc.generate_max_offset_map(save_path=results_dir / "max_offset_map.png")
+        print("Saved max_offset_map.png")
+        plt.close(max_offset_figure)
+
+        print("Generating Minimum Offset Map...")
+        min_offset_figure = qc.generate_min_offset_map(save_path=results_dir / "min_offset_map.png")
+        print("Saved min_offset_map.png")
+        plt.close(min_offset_figure)
 
         self._save_figure(
             "azimuth_rose",
@@ -354,19 +449,36 @@ class SurveyPipeline:
 
     #################################################################
 
-    def _run_logistics(self, geometry, production_summary):
-        inventory = EquipmentInventory(receiver_nodes=geometry.receiver_count)
+    def _run_logistics(self, gis, geometry, production_summary):
+        inventory = EquipmentInventory(
+            receiver_nodes=geometry.receiver_count,
+            node_weight_kg=self.business_model.node_logistics.node_weight_lb * 0.45359237,
+            empty_pallet_weight_kg=self.business_model.node_logistics.pallet_weight_lb * 0.45359237,
+            maximum_payload_per_pallet_kg=self.business_model.node_logistics.maximum_payload_per_pallet_lb * 0.45359237,
+        )
+
+        shipping = self.business_model.node_shipping_options(geometry.receiver_count)
+        mobilization_cost = self.business_model.mobilization_cost(gis)
+        field_days = production_summary.critical_path_days
+        transport_cost = (
+            mobilization_cost
+            + shipping["selected_shipping_cost"]
+            + self.business_model.hotel_cost(field_days)
+            + self.business_model.per_diem_cost(field_days)
+            + self.business_model.total_equipment_cost(field_days)
+            + self.business_model.total_crew_cost(field_days)
+        )
 
         scenario = LogisticsScenario(
             name="Default",
             transport_method="Truck",
-            outbound_days_min=1.0,
-            outbound_days_most_likely=2.0,
-            outbound_days_max=3.0,
-            return_days_min=1.0,
-            return_days_most_likely=2.0,
-            return_days_max=3.0,
-            transport_cost=0.0,
+            outbound_days_min=shipping["selected_outbound_days"],
+            outbound_days_most_likely=shipping["selected_outbound_days"],
+            outbound_days_max=shipping["selected_outbound_days"],
+            return_days_min=shipping["selected_return_days"],
+            return_days_most_likely=shipping["selected_return_days"],
+            return_days_max=shipping["selected_return_days"],
+            transport_cost=transport_cost,
             crew_members=0,
             crew_daily_cost=0.0,
             vehicle_cost_per_mile=0.0,
@@ -403,3 +515,4 @@ class SurveyPipeline:
         result.coverage_percent = illumination_summary.coverage_percent
 
         return result
+

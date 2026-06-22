@@ -142,6 +142,84 @@ class Plotter:
 
     ##################################################################
 
+    def plot_azimuth_distribution(self, show=False, save_path=None, dpi=300):
+        """Plot histogram of trace azimuth distribution with 36 bins (10 degrees each)."""
+
+        azimuths = []
+
+        if self.cmp_grid is not None:
+            for bin_record in getattr(self.cmp_grid, "bins", []):
+                for trace in getattr(bin_record, "traces", []):
+                    azimuths.append(trace.azimuth_deg)
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        try:
+            ax.hist(
+                azimuths,
+                bins=36,
+                range=(0.0, 360.0),
+                color="steelblue",
+                edgecolor="black",
+                linewidth=0.5,
+            )
+            ax.set_xlabel("Azimuth (degrees)")
+            ax.set_ylabel("Trace Count")
+            ax.set_title("Trace Azimuth Distribution")
+            ax.set_xlim(0.0, 360.0)
+            ax.set_xticks(range(0, 361, 45))
+            ax.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
+
+            if save_path is not None:
+                fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+
+            if show:
+                plt.show()
+
+        finally:
+            plt.close(fig)
+
+    ##################################################################
+
+    def plot_orientation_distribution(self, show=False, save_path=None, dpi=300):
+        """Plot histogram of trace orientation distribution with 18 bins (10 degrees each)."""
+
+        orientations = []
+
+        if self.cmp_grid is not None:
+            for bin_record in getattr(self.cmp_grid, "bins", []):
+                for trace in getattr(bin_record, "traces", []):
+                    orientations.append(trace.azimuth_deg % 180.0)
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        try:
+            ax.hist(
+                orientations,
+                bins=18,
+                range=(0.0, 180.0),
+                color="seagreen",
+                edgecolor="black",
+                linewidth=0.5,
+            )
+            ax.set_xlabel("Orientation (degrees)")
+            ax.set_ylabel("Trace Count")
+            ax.set_title("Trace Orientation Distribution")
+            ax.set_xlim(0.0, 180.0)
+            ax.set_xticks(range(0, 181, 30))
+            ax.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
+
+            if save_path is not None:
+                fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+
+            if show:
+                plt.show()
+
+        finally:
+            plt.close(fig)
+
+    ##################################################################
+
     def plot_azimuth_rose(self, show=False, save_path=None, dpi=300):
 
         raise NotImplementedError("Azimuth rose plotting is not implemented in Plotter yet.")

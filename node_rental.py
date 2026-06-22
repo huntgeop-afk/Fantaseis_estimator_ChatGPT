@@ -5,9 +5,9 @@ from dataclasses import dataclass
 class NodeRentalRates:
     """Stores per-node rental and service fee assumptions for rented receiver nodes."""
 
-    daily_rental_rate: float = 1.25
-    prep_fee_per_node: float = 1.25
-    download_fee_per_node: float = 1.25
+    daily_rental_rate: float
+    prep_fee_per_node: float
+    download_fee_per_node: float
 
 
 @dataclass

@@ -4,9 +4,9 @@ import math
 
 @dataclass
 class ProductionRates:
-    shots_per_day: int = 250
-    node_deployments_per_day: int = 500
-    node_pickups_per_day: int = 800
+    shots_per_day: int
+    node_deployments_per_day: int
+    node_pickups_per_day: int
 
 
 @dataclass
