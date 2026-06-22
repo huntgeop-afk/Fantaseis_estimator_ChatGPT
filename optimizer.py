@@ -218,7 +218,7 @@ class GridSearchOptimizer:
 
         if candidates:
             selected = self._select_recommended_design(candidates, valid_candidates)
-            self._write_recommended_design(selected, valid_candidates)
+            self._write_recommended_design(selected, valid_candidates, gis)
             print(self._business_summary_for_candidate(selected, gis))
             
             # Feature 047B: Optimizer Decision Summary
@@ -641,7 +641,7 @@ class GridSearchOptimizer:
             empty_pallet_weight_kg=self.business_model.node_logistics.pallet_weight_lb * 0.45359237,
             maximum_payload_per_pallet_kg=self.business_model.node_logistics.maximum_payload_per_pallet_lb * 0.45359237,
         )
-        shipping = self.business_model.node_shipping_options(geometry.receiver_count)
+        shipping = self.business_model.node_shipping_options(geometry.receiver_count, gis)
         mobilization_cost = self.business_model.mobilization_cost(gis)
         field_days = production_summary.critical_path_days
         transport_cost = (
@@ -986,13 +986,15 @@ class GridSearchOptimizer:
 
     #################################################################
 
-    def _write_recommended_design(self, selected, valid_candidates):
+    def _write_recommended_design(self, selected, valid_candidates, gis):
         reason = (
             "Selected because it satisfies engineering constraints and client objectives while maximizing expected profit, "
             "then minimizing acquisition duration and node count."
             if selected.is_valid
             else "No fully valid design exists; selected closest-to-feasible design with highest engineering quality and business performance."
         )
+
+        shipping = self.business_model.node_shipping_options(selected.required_node_count, gis)
 
         lines = [
             "==================================================",
@@ -1018,6 +1020,8 @@ class GridSearchOptimizer:
             "Business Summary",
             f"Node Rental Cost : ${selected.node_rental_cost:.2f}",
             f"Shipping and Business Cost : ${selected.shipping_cost:.2f}",
+            f"Selected Transportation Method : {shipping['selected_shipping_method_label']}",
+            f"Commercial Shipping Cost : ${shipping['commercial_shipping_cost']:.2f}",
             f"Optimization Score : {selected.optimization_score:.6f}",
             "",
             "Reason Selected",
@@ -1025,6 +1029,18 @@ class GridSearchOptimizer:
             "",
             "==================================================",
         ]
+
+        if shipping["selected_shipping_method"] == "owner":
+            lines.extend([
+                "Transportation Details",
+                f"Drivers : {shipping['owner_drivers']}",
+                f"Mileage Rate : ${shipping['owner_compensation_per_mile']:.2f}/mile",
+                f"Pickup Distance : {shipping['owner_pickup_distance_miles']:.2f} miles",
+                f"Return Distance : {shipping['owner_return_distance_miles']:.2f} miles",
+                f"Total Transportation Cost : ${shipping['owner_total_cost']:.2f}",
+                "",
+                "==================================================",
+            ])
 
         if len(valid_candidates) > 1:
             second = valid_candidates[1]

@@ -48,12 +48,15 @@ DEFAULT_BUSINESS_CONFIG = {
         "maximum_payload_per_pallet_lb": 1102.31,
         "commercial_shipping_cost_per_pound": 0.28,
         "commercial_shipping_days": 2.0,
-        "owner_pickup_enabled": True,
-        "owner_return_enabled": True,
-        "pickup_driver_daily_rate": 650.0,
-        "return_driver_daily_rate": 650.0,
-        "pickup_days": 2.0,
-        "return_days": 2.0,
+    },
+    "owner_transport": {
+        "enabled": True,
+        "compensation_per_mile": 1.50,
+        "drivers": 2,
+        "vendor_city": "Houston",
+        "vendor_state": "TX",
+        "pickup_origin_city": "Cincinnati",
+        "pickup_origin_state": "OH",
     },
     "pricing": {
         "method": "desired_profit_margin",
@@ -146,12 +149,17 @@ class NodeLogisticsBusiness:
     maximum_payload_per_pallet_lb: float
     commercial_shipping_cost_per_pound: float
     commercial_shipping_days: float
-    owner_pickup_enabled: bool
-    owner_return_enabled: bool
-    pickup_driver_daily_rate: float
-    return_driver_daily_rate: float
-    pickup_days: float
-    return_days: float
+
+
+@dataclass(frozen=True)
+class OwnerTransportBusiness:
+    enabled: bool
+    compensation_per_mile: float
+    drivers: int
+    vendor_city: str
+    vendor_state: str
+    pickup_origin_city: str
+    pickup_origin_state: str
 
 
 @dataclass(frozen=True)
@@ -163,6 +171,11 @@ class PricingBusiness:
 
 class BusinessModel:
     """Single source of truth for all business assumptions and business-only calculations."""
+
+    CITY_STATE_COORDINATES = {
+        ("CINCINNATI", "OH"): (39.1031, -84.5120),
+        ("HOUSTON", "TX"): (29.7604, -95.3698),
+    }
 
     def __init__(self, project_folder):
         self.project_folder = Path(project_folder)
@@ -176,6 +189,7 @@ class BusinessModel:
         self.travel = TravelBusiness(**self.config["travel"])
         self.equipment = EquipmentBusiness(**self.config["equipment"])
         self.node_logistics = NodeLogisticsBusiness(**self.config["node_logistics"])
+        self.owner_transport = OwnerTransportBusiness(**self.config["owner_transport"])
         self.pricing = PricingBusiness(**self.config["pricing"])
 
     #################################################################
@@ -185,7 +199,51 @@ class BusinessModel:
             self.business_path.write_text(json.dumps(DEFAULT_BUSINESS_CONFIG, indent=2), encoding="utf-8")
 
         with open(self.business_path, "r", encoding="utf-8") as stream:
-            return json.load(stream)
+            config = json.load(stream)
+
+        return self._normalize_config(config)
+
+    #################################################################
+
+    def _normalize_config(self, config):
+        normalized = json.loads(json.dumps(config))
+
+        if "owner_transport" not in normalized:
+            legacy = normalized.get("node_logistics", {})
+            normalized["owner_transport"] = {
+                "enabled": bool(legacy.get("owner_pickup_enabled", True) or legacy.get("owner_return_enabled", True)),
+                "compensation_per_mile": 1.50,
+                "drivers": 2,
+                "vendor_city": "Houston",
+                "vendor_state": "TX",
+                "pickup_origin_city": "Cincinnati",
+                "pickup_origin_state": "OH",
+            }
+
+        node_defaults = DEFAULT_BUSINESS_CONFIG["node_logistics"]
+        normalized_node = normalized.get("node_logistics", {})
+        normalized["node_logistics"] = {
+            "node_rental_per_node_day": normalized_node.get("node_rental_per_node_day", node_defaults["node_rental_per_node_day"]),
+            "node_weight_lb": normalized_node.get("node_weight_lb", node_defaults["node_weight_lb"]),
+            "pallet_weight_lb": normalized_node.get("pallet_weight_lb", node_defaults["pallet_weight_lb"]),
+            "maximum_payload_per_pallet_lb": normalized_node.get("maximum_payload_per_pallet_lb", node_defaults["maximum_payload_per_pallet_lb"]),
+            "commercial_shipping_cost_per_pound": normalized_node.get("commercial_shipping_cost_per_pound", node_defaults["commercial_shipping_cost_per_pound"]),
+            "commercial_shipping_days": normalized_node.get("commercial_shipping_days", node_defaults["commercial_shipping_days"]),
+        }
+
+        owner_defaults = DEFAULT_BUSINESS_CONFIG["owner_transport"]
+        normalized_owner = normalized.get("owner_transport", {})
+        normalized["owner_transport"] = {
+            "enabled": normalized_owner.get("enabled", owner_defaults["enabled"]),
+            "compensation_per_mile": normalized_owner.get("compensation_per_mile", owner_defaults["compensation_per_mile"]),
+            "drivers": normalized_owner.get("drivers", owner_defaults["drivers"]),
+            "vendor_city": normalized_owner.get("vendor_city", owner_defaults["vendor_city"]),
+            "vendor_state": normalized_owner.get("vendor_state", owner_defaults["vendor_state"]),
+            "pickup_origin_city": normalized_owner.get("pickup_origin_city", owner_defaults["pickup_origin_city"]),
+            "pickup_origin_state": normalized_owner.get("pickup_origin_state", owner_defaults["pickup_origin_state"]),
+        }
+
+        return normalized
 
     #################################################################
 
@@ -197,6 +255,7 @@ class BusinessModel:
             "travel",
             "equipment",
             "node_logistics",
+            "owner_transport",
             "pricing",
         ]
 
@@ -209,6 +268,8 @@ class BusinessModel:
         self._require_non_negative(config["crew"]["traffic_control_personnel"], "traffic_control_personnel")
         self._require_positive(config["mobilization"]["mileage_rate_per_mile"], "mileage_rate_per_mile")
         self._require_positive(config["mobilization"]["road_factor"], "road_factor")
+        self._require_positive(config["owner_transport"]["compensation_per_mile"], "compensation_per_mile")
+        self._require_positive(config["owner_transport"]["drivers"], "owner_transport.drivers")
         self._require_positive(config["travel"]["hotel_rooms_per_person"], "hotel_rooms_per_person")
         self._require_non_negative(config["travel"]["hotel_cost_per_room"], "hotel_cost_per_room")
         self._require_non_negative(config["travel"]["per_diem_per_contractor_per_day"], "per_diem_per_contractor_per_day")
@@ -307,7 +368,7 @@ class BusinessModel:
 
     #################################################################
 
-    def node_shipping_options(self, receiver_nodes):
+    def node_shipping_options(self, receiver_nodes, gis_project):
         nodes = float(receiver_nodes)
 
         pallet_count = math.ceil((nodes * self.node_logistics.node_weight_lb) / self.node_logistics.maximum_payload_per_pallet_lb)
@@ -315,25 +376,49 @@ class BusinessModel:
 
         commercial_cost = total_weight_lb * self.node_logistics.commercial_shipping_cost_per_pound
 
-        owner_pickup_cost = float("inf")
-        owner_return_cost = float("inf")
-        owner_outbound_days = self.node_logistics.pickup_days if self.node_logistics.owner_pickup_enabled else 0.0
-        owner_return_days = self.node_logistics.return_days if self.node_logistics.owner_return_enabled else 0.0
+        owner_pickup_distance_miles = 0.0
+        owner_return_distance_miles = 0.0
+        owner_pickup_cost = 0.0
+        owner_return_cost = 0.0
+        owner_total_cost = float("inf")
 
-        if self.node_logistics.owner_pickup_enabled:
-            owner_pickup_cost = self.node_logistics.pickup_driver_daily_rate * self.node_logistics.pickup_days
+        if self.owner_transport.enabled:
+            origin_lat, origin_lon = self._city_state_lat_lon(
+                self.owner_transport.pickup_origin_city,
+                self.owner_transport.pickup_origin_state,
+            )
+            vendor_lat, vendor_lon = self._city_state_lat_lon(
+                self.owner_transport.vendor_city,
+                self.owner_transport.vendor_state,
+            )
+            project_lat, project_lon = self._survey_centroid_lat_lon(gis_project)
 
-        if self.node_logistics.owner_return_enabled:
-            owner_return_cost = self.node_logistics.return_driver_daily_rate * self.node_logistics.return_days
+            owner_pickup_distance_miles = (
+                self._haversine_miles(origin_lat, origin_lon, vendor_lat, vendor_lon)
+                * self.mobilization.road_factor
+            )
+            owner_return_distance_miles = (
+                self._haversine_miles(project_lat, project_lon, vendor_lat, vendor_lon)
+                * self.mobilization.road_factor
+            )
 
-        owner_total_cost = 0.0
-        if owner_pickup_cost != float("inf"):
-            owner_total_cost += owner_pickup_cost
-        if owner_return_cost != float("inf"):
-            owner_total_cost += owner_return_cost
+            owner_pickup_cost = (
+                owner_pickup_distance_miles
+                * self.owner_transport.compensation_per_mile
+                * self.owner_transport.drivers
+            )
+            owner_return_cost = (
+                owner_return_distance_miles
+                * self.owner_transport.compensation_per_mile
+                * self.owner_transport.drivers
+            )
+            owner_total_cost = owner_pickup_cost + owner_return_cost
+
+        owner_outbound_days = self.node_logistics.commercial_shipping_days if self.owner_transport.enabled else 0.0
+        owner_return_days = self.node_logistics.commercial_shipping_days if self.owner_transport.enabled else 0.0
 
         choose_owner = False
-        if owner_total_cost > 0.0 and owner_total_cost < commercial_cost:
+        if owner_total_cost < commercial_cost:
             choose_owner = True
 
         selected_shipping_cost = owner_total_cost if choose_owner else commercial_cost
@@ -347,9 +432,15 @@ class BusinessModel:
             "total_weight_lb": total_weight_lb,
             "commercial_shipping_cost": commercial_cost,
             "commercial_shipping_days": self.node_logistics.commercial_shipping_days,
-            "owner_pickup_cost": 0.0 if owner_pickup_cost == float("inf") else owner_pickup_cost,
-            "owner_return_cost": 0.0 if owner_return_cost == float("inf") else owner_return_cost,
+            "owner_pickup_distance_miles": owner_pickup_distance_miles,
+            "owner_return_distance_miles": owner_return_distance_miles,
+            "owner_pickup_cost": owner_pickup_cost,
+            "owner_return_cost": owner_return_cost,
+            "owner_total_cost": 0.0 if owner_total_cost == float("inf") else owner_total_cost,
+            "owner_drivers": int(self.owner_transport.drivers),
+            "owner_compensation_per_mile": float(self.owner_transport.compensation_per_mile),
             "selected_shipping_method": selected_method,
+            "selected_shipping_method_label": "Owner Transportation" if choose_owner else "Commercial Shipping",
             "selected_shipping_cost": selected_shipping_cost,
             "selected_outbound_days": selected_outbound_days,
             "selected_return_days": selected_return_days,
@@ -403,7 +494,7 @@ class BusinessModel:
     #################################################################
 
     def business_model_summary(self, gis_project, acquisition_days, receiver_nodes, node_rental_days, internal_cost):
-        shipping = self.node_shipping_options(receiver_nodes)
+        shipping = self.node_shipping_options(receiver_nodes, gis_project)
         pricing = self.price_from_internal_cost(internal_cost)
         mobilization_cost = self.mobilization_cost(gis_project)
 
@@ -421,7 +512,16 @@ class BusinessModel:
             f"Per Diem Cost                 : ${self.per_diem_cost(acquisition_days):.2f}",
             f"Equipment Cost                : ${self.total_equipment_cost(acquisition_days):.2f}",
             f"Node Rental Cost              : ${self.node_rental_cost(receiver_nodes, node_rental_days):.2f}",
-            f"Shipping Cost                 : ${shipping['selected_shipping_cost']:.2f}",
+            "Owner Transportation",
+            f"Drivers                       : {shipping['owner_drivers']}",
+            f"Mileage Rate                  : ${shipping['owner_compensation_per_mile']:.2f}/mile",
+            f"Pickup Distance               : {shipping['owner_pickup_distance_miles']:.2f} miles",
+            f"Pickup Cost                   : ${shipping['owner_pickup_cost']:.2f}",
+            f"Return Distance               : {shipping['owner_return_distance_miles']:.2f} miles",
+            f"Return Cost                   : ${shipping['owner_return_cost']:.2f}",
+            f"Total Transportation Cost     : ${shipping['owner_total_cost']:.2f}",
+            f"Commercial Shipping Cost      : ${shipping['commercial_shipping_cost']:.2f}",
+            f"Selected Method               : {shipping['selected_shipping_method_label']}",
             f"Internal Project Cost         : ${pricing['internal_project_cost']:.2f}",
             f"Client Price                  : ${pricing['client_price']:.2f}",
             f"Expected Profit               : ${pricing['expected_profit']:.2f}",
@@ -451,6 +551,14 @@ class BusinessModel:
 
         area_sq_ft = float(polygon.area)
         return area_sq_ft / (5280.0 * 5280.0)
+
+    #################################################################
+
+    def _city_state_lat_lon(self, city, state):
+        key = (str(city).strip().upper(), str(state).strip().upper())
+        if key not in self.CITY_STATE_COORDINATES:
+            raise ValueError(f"Unsupported owner transport location: {city}, {state}")
+        return self.CITY_STATE_COORDINATES[key]
 
     #################################################################
 

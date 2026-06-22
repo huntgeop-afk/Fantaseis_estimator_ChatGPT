@@ -191,7 +191,7 @@ class DesignSpaceAnalysis:
             empty_pallet_weight_kg=self.business_model.node_logistics.pallet_weight_lb * 0.45359237,
             maximum_payload_per_pallet_kg=self.business_model.node_logistics.maximum_payload_per_pallet_lb * 0.45359237,
         )
-        shipping = self.business_model.node_shipping_options(geometry.receiver_count)
+        shipping = self.business_model.node_shipping_options(geometry.receiver_count, gis)
         field_days = production_summary.critical_path_days
         transport_cost = (
             self.business_model.mobilization_cost(gis)
