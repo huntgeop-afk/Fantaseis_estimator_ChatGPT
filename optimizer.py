@@ -5,6 +5,7 @@ import io
 import itertools
 import json
 import math
+import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -253,9 +254,9 @@ class GridSearchOptimizer:
 
     def _load_or_create_config(self):
         if not self.optimization_path.exists():
-            self.optimization_path.write_text(
+            self._write_text_file(
+                self.optimization_path,
                 json.dumps(DEFAULT_OPTIMIZATION_CONFIG, indent=2),
-                encoding="utf-8",
             )
 
         with open(self.optimization_path, "r", encoding="utf-8") as stream:
@@ -888,6 +889,16 @@ class GridSearchOptimizer:
             writer.writeheader()
             for row in rows:
                 writer.writerow(row)
+            stream.flush()
+            os.fsync(stream.fileno())
+
+    #################################################################
+
+    def _write_text_file(self, file_path, content):
+        with open(file_path, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
 
     #################################################################
 
@@ -1040,7 +1051,7 @@ class GridSearchOptimizer:
                 "",
             ])
 
-        self.recommended_design_path.write_text("\n".join(lines), encoding="utf-8")
+        self._write_text_file(self.recommended_design_path, "\n".join(lines))
 
     #################################################################
 
@@ -1466,7 +1477,7 @@ class GridSearchOptimizer:
         ]
 
         decision_summary_path = self.project_folder / "optimizer_decision_summary.txt"
-        decision_summary_path.write_text("\n".join(lines), encoding="utf-8")
+        self._write_text_file(decision_summary_path, "\n".join(lines))
 
     #################################################################
 
@@ -1572,7 +1583,7 @@ class GridSearchOptimizer:
             "==================================================",
         ]
 
-        self.optimization_summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self._write_text_file(self.optimization_summary_path, "\n".join(lines) + "\n")
 
     #################################################################
 

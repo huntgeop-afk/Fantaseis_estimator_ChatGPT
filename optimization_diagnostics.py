@@ -1,4 +1,5 @@
 import csv
+import os
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,11 +49,11 @@ class OptimizationDiagnostics:
         sensitivity_text = self._build_sensitivity_text(rows)
         recommendations_text = self._build_recommendations_text(rows, rejected_rows, failure_counter, most_limiting)
 
-        self.diagnostics_txt.write_text(
+        self._write_text_file(
+            self.diagnostics_txt,
             diagnostics_text + "\n\n" + sensitivity_text + "\n",
-            encoding="utf-8",
         )
-        self.recommendations_txt.write_text(recommendations_text + "\n", encoding="utf-8")
+        self._write_text_file(self.recommendations_txt, recommendations_text + "\n")
 
         self._write_failure_summary_csv(failure_counter, multiple_constraints)
 
@@ -128,6 +129,14 @@ class OptimizationDiagnostics:
                 rows.append(row)
 
         return rows
+
+    #################################################################
+
+    def _write_text_file(self, file_path, content):
+        with open(file_path, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
 
     #################################################################
 
@@ -484,3 +493,5 @@ class OptimizationDiagnostics:
             writer.writerow(["Constraint", "FailureCount"])
             for name, count in rows:
                 writer.writerow([name, count])
+            stream.flush()
+            os.fsync(stream.fileno())

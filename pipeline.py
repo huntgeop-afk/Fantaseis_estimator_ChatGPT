@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 import matplotlib
@@ -67,11 +68,12 @@ class PipelineResults:
 class SurveyPipeline:
     """Orchestrates the end-to-end FantaSeis workflow using existing project modules."""
 
-    def __init__(self, project_folder, debug=DEBUG, business_model=None):
+    def __init__(self, project_folder, debug=DEBUG, business_model=None, execution_mode="optimize"):
         self.project_folder = Path(project_folder)
         self.show_plots = False
         self.debug = debug
         self.business_model = business_model if business_model is not None else BusinessModel(project_folder)
+        self.execution_mode = execution_mode
 
     #################################################################
 
@@ -235,32 +237,36 @@ class SurveyPipeline:
             lambda: IlluminationAnalysis(cmp_grid).analyze(),
         )
 
-        self._log("Evaluating Current Design...")
-        optimization_result = self._run_step(
-            "Current design evaluation",
-            lambda: self._evaluate_current_design(
-                survey,
-                geometry,
-                production_summary,
-                cost_summary,
-                true_fold_summary,
-                illumination_summary,
-            ),
-        )
+        optimization_result = None
+        report_text = ""
 
-        report_text = self._run_step(
-            "Report generation",
-            lambda: OptimizationReport(
-                survey,
-                optimization_result,
-                true_fold_summary=true_fold_summary,
-                offset_distribution=offset_distribution,
-                azimuth_summary=azimuth_summary,
-                ava_summary=ava_summary,
-                avaz_summary=avaz_summary,
-                illumination_summary=illumination_summary,
-            ).generate(),
-        )
+        if self.execution_mode == "optimize":
+            self._log("Evaluating Current Design...")
+            optimization_result = self._run_step(
+                "Current design evaluation",
+                lambda: self._evaluate_current_design(
+                    survey,
+                    geometry,
+                    production_summary,
+                    cost_summary,
+                    true_fold_summary,
+                    illumination_summary,
+                ),
+            )
+
+            report_text = self._run_step(
+                "Report generation",
+                lambda: OptimizationReport(
+                    survey,
+                    optimization_result,
+                    true_fold_summary=true_fold_summary,
+                    offset_distribution=offset_distribution,
+                    azimuth_summary=azimuth_summary,
+                    ava_summary=ava_summary,
+                    avaz_summary=avaz_summary,
+                    illumination_summary=illumination_summary,
+                ).generate(),
+            )
 
         results_dir = self._results_directory()
 
@@ -276,11 +282,12 @@ class SurveyPipeline:
             qc,
         )
 
-        self._log("Saving optimization_report.txt")
-        self._run_step(
-            "Optimization report write",
-            lambda: self._write_text_file(results_dir / "optimization_report.txt", report_text),
-        )
+        if self.execution_mode == "optimize":
+            self._log("Saving optimization_report.txt")
+            self._run_step(
+                "Optimization report write",
+                lambda: self._write_text_file(results_dir / "optimization_report.txt", report_text),
+            )
 
         return PipelineResults(
             survey=survey,
@@ -445,7 +452,10 @@ class SurveyPipeline:
     #################################################################
 
     def _write_text_file(self, file_path, text):
-        file_path.write_text(text, encoding="utf-8")
+        with open(file_path, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
 
     #################################################################
 

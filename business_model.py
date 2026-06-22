@@ -1,5 +1,6 @@
 import json
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -196,7 +197,10 @@ class BusinessModel:
 
     def _load_or_create_config(self):
         if not self.business_path.exists():
-            self.business_path.write_text(json.dumps(DEFAULT_BUSINESS_CONFIG, indent=2), encoding="utf-8")
+            with open(self.business_path, "w", encoding="utf-8", newline="\n") as stream:
+                stream.write(json.dumps(DEFAULT_BUSINESS_CONFIG, indent=2))
+                stream.flush()
+                os.fsync(stream.fileno())
 
         with open(self.business_path, "r", encoding="utf-8") as stream:
             config = json.load(stream)

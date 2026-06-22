@@ -1,6 +1,7 @@
 import copy
 import csv
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
@@ -542,6 +543,8 @@ class DesignSpaceAnalysis:
             writer.writeheader()
             for candidate in pareto_frontier:
                 writer.writerow(self._candidate_row(candidate, include_rank=True))
+            stream.flush()
+            os.fsync(stream.fileno())
 
     #################################################################
 
@@ -585,13 +588,29 @@ class DesignSpaceAnalysis:
                     "Optimization Score": f"{candidate.optimization_score:.6f}",
                     "Pareto Rank": candidate.pareto_rank,
                 })
+            stream.flush()
+            os.fsync(stream.fileno())
 
     #################################################################
 
     def _write_text_outputs(self, range_analysis, sensitivity_rank, pareto_frontier, preferred_design, insights):
-        self.output_txt.write_text(self._build_analysis_text(range_analysis, sensitivity_rank, pareto_frontier, preferred_design), encoding="utf-8")
-        self.recommended_txt.write_text(self._build_recommended_text(preferred_design, pareto_frontier), encoding="utf-8")
-        self.insights_txt.write_text("\n".join(insights) + "\n", encoding="utf-8")
+        self._write_text_file(
+            self.output_txt,
+            self._build_analysis_text(range_analysis, sensitivity_rank, pareto_frontier, preferred_design),
+        )
+        self._write_text_file(
+            self.recommended_txt,
+            self._build_recommended_text(preferred_design, pareto_frontier),
+        )
+        self._write_text_file(self.insights_txt, "\n".join(insights) + "\n")
+
+    #################################################################
+
+    def _write_text_file(self, file_path, content):
+        with open(file_path, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
 
     #################################################################
 
