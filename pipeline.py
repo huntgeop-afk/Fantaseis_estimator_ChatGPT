@@ -124,6 +124,7 @@ class SurveyPipeline:
         )
 
         self._log("Running Node Rental Model...")
+        live_receiver_nodes = self.business_model.live_receiver_nodes(geometry)
         node_rental_summary = self._run_step(
             "Node rental model",
             lambda: NodeRentalModel(
@@ -133,7 +134,7 @@ class SurveyPipeline:
                     download_fee_per_node=0.0,
                 )
             ).estimate(
-                geometry.receiver_count,
+                live_receiver_nodes,
                 logistics_summary.expected_node_rental_days,
             ),
         )
@@ -153,7 +154,7 @@ class SurveyPipeline:
             self.business_model.business_model_summary(
                 gis_project=gis,
                 acquisition_days=production_summary.critical_path_days,
-                receiver_nodes=geometry.receiver_count,
+                receiver_nodes=live_receiver_nodes,
                 node_rental_days=logistics_summary.expected_node_rental_days,
                 internal_cost=cost_summary.total_project_cost,
             )
@@ -182,7 +183,7 @@ class SurveyPipeline:
         self._log("Computing Fold...")
         true_fold_summary = self._run_step(
             "True fold analysis",
-            lambda: TrueFoldAnalysis(cmp_grid).analyze(),
+            lambda: TrueFoldAnalysis(cmp_grid, survey.target_depth, 40.0).analyze(),
         )
         print(true_fold_summary.summary())
 
@@ -460,15 +461,17 @@ class SurveyPipeline:
     #################################################################
 
     def _run_logistics(self, gis, geometry, production_summary):
+        live_receiver_nodes = self.business_model.live_receiver_nodes(geometry)
+
         inventory = EquipmentInventory(
-            receiver_nodes=geometry.receiver_count,
+            receiver_nodes=live_receiver_nodes,
             node_weight_kg=self.business_model.node_logistics.node_weight_lb * 0.45359237,
             empty_pallet_weight_kg=self.business_model.node_logistics.pallet_weight_lb * 0.45359237,
             maximum_payload_per_pallet_kg=self.business_model.node_logistics.maximum_payload_per_pallet_lb * 0.45359237,
-            active_receiver_nodes=geometry.receiver_count,
+            active_receiver_nodes=live_receiver_nodes,
         )
 
-        shipping = self.business_model.node_shipping_options(geometry.receiver_count, gis)
+        shipping = self.business_model.node_shipping_options(live_receiver_nodes, gis)
 
         scenario = LogisticsScenario(
             name="Default",

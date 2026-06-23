@@ -156,7 +156,7 @@ class GridSearchOptimizer:
         "active_receiver_lines": "Active Receiver Lines",
     }
 
-    def __init__(self, project_folder, business_model=None):
+    def __init__(self, project_folder, business_model=None, preset_config=None, preset_info=None):
         self.project_folder = Path(project_folder)
         self.optimization_path = self.project_folder / "optimization.json"
         self.results_csv = self.project_folder / "optimization_results.csv"
@@ -164,11 +164,15 @@ class GridSearchOptimizer:
         self.recommended_design_path = self.project_folder / "recommended_design.txt"
         self.optimization_summary_path = self.project_folder / "optimization_summary.txt"
         self.business_model = business_model if business_model is not None else BusinessModel(project_folder)
+        self.preset_config = copy.deepcopy(preset_config) if preset_config is not None else None
+        self.preset_info = copy.deepcopy(preset_info) if preset_info is not None else None
 
     #################################################################
 
     def run(self):
         config = self._load_or_create_config()
+
+        self._print_smoke_banner()
 
         print("========================================")
         print("GRID SEARCH OPTIMIZATION")
@@ -179,6 +183,7 @@ class GridSearchOptimizer:
         gis.load_boundary()
 
         generated_search_space = self._build_search_space(base_survey, config["search_space"])
+        self._print_preset_block(generated_search_space["candidate_count"])
         self._print_search_space(generated_search_space)
 
         validation = self._validate_search_space(generated_search_space)
@@ -192,11 +197,22 @@ class GridSearchOptimizer:
         adaptive_search = AdaptiveSearch(self.project_folder, base_survey)
         adaptive_search.print_header(len(candidate_surveys))
 
+        progress_state = {"count": 0, "total": len(candidate_surveys)}
+
         def evaluate_callback(survey_candidate):
             with contextlib.redirect_stdout(io.StringIO()):
-                return self._evaluate_candidate(survey_candidate, gis, config)
+                result = self._evaluate_candidate(survey_candidate, gis, config)
 
-        _, evaluated_candidates = adaptive_search.prioritize_candidates(candidate_surveys, evaluate_callback)
+            progress_state["count"] += 1
+            if self.preset_info and self.preset_info.get("preset_key") == "smoke":
+                self._print_candidate_progress(progress_state["count"], progress_state["total"])
+
+            return result
+
+        _, evaluated_candidates = adaptive_search.prioritize_candidates(
+            candidate_surveys,
+            evaluate_callback,
+        )
         candidates.extend(evaluated_candidates)
 
         candidates.sort(
@@ -252,7 +268,41 @@ class GridSearchOptimizer:
 
     #################################################################
 
+    def _print_smoke_banner(self):
+        if not self.preset_info or self.preset_info.get("preset_key") != "smoke":
+            return
+
+        expected_candidates = int(self.preset_info.get("expected_candidates", 16))
+        purpose = self.preset_info.get("purpose", "Optimizer Validation")
+
+        print("========================================")
+        print("SMOKE TEST")
+        print("========================================")
+        print()
+        print("Expected Candidates")
+        print()
+        print(str(expected_candidates))
+        print()
+        print("Purpose")
+        print()
+        print(str(purpose))
+        print("========================================")
+
+    #################################################################
+
+    def _print_candidate_progress(self, current_count, total_count):
+        print("Candidate")
+        print()
+        print(f"{current_count} of {total_count}")
+        print()
+        print("Completed")
+
+    #################################################################
+
     def _load_or_create_config(self):
+        if self.preset_config is not None:
+            return self._normalize_config(self.preset_config)
+
         if not self.optimization_path.exists():
             self._write_text_file(
                 self.optimization_path,
@@ -263,6 +313,31 @@ class GridSearchOptimizer:
             raw_config = json.load(stream)
 
         return self._normalize_config(raw_config)
+
+    #################################################################
+
+    def _print_preset_block(self, candidate_count):
+        if not self.preset_info:
+            return
+
+        priorities = self.preset_info.get("objective_priorities", [])
+        priorities_text = ", ".join(str(item) for item in priorities) if priorities else "N/A"
+
+        print("==================================================")
+        print("OPTIMIZATION PRESET")
+        print("==================================================")
+        print("Preset Name")
+        print(self.preset_info.get("display_name", "Unknown"))
+        print()
+        print("Primary Objective")
+        print(self.preset_info.get("primary_objective", "N/A"))
+        print()
+        print("Search Space Size")
+        print(str(candidate_count))
+        print()
+        print("Objective Priorities")
+        print(priorities_text)
+        print("==================================================")
 
     #################################################################
 
@@ -619,7 +694,11 @@ class GridSearchOptimizer:
         cmp_grid = CMPAnalysis(survey_candidate, geometry).generate()
         cmp_grid = CMPPopulator(cmp_grid, geometry, acquisition).populate()
 
-        fold_summary = TrueFoldAnalysis(cmp_grid).analyze()
+        fold_summary = TrueFoldAnalysis(
+            cmp_grid,
+            survey_candidate.target_depth,
+            40.0,
+        ).analyze()
         ava_summary = AVAAnalysis(
             cmp_grid,
             survey_candidate.target_depth,
@@ -636,14 +715,16 @@ class GridSearchOptimizer:
             )
         ).estimate([], geometry)
 
+        live_receiver_nodes = self.business_model.live_receiver_nodes(geometry)
+
         inventory = EquipmentInventory(
-            receiver_nodes=geometry.receiver_count,
+            receiver_nodes=live_receiver_nodes,
             node_weight_kg=self.business_model.node_logistics.node_weight_lb * 0.45359237,
             empty_pallet_weight_kg=self.business_model.node_logistics.pallet_weight_lb * 0.45359237,
             maximum_payload_per_pallet_kg=self.business_model.node_logistics.maximum_payload_per_pallet_lb * 0.45359237,
-            active_receiver_nodes=geometry.receiver_count,
+            active_receiver_nodes=live_receiver_nodes,
         )
-        shipping = self.business_model.node_shipping_options(geometry.receiver_count, gis)
+        shipping = self.business_model.node_shipping_options(live_receiver_nodes, gis)
         field_days = production_summary.critical_path_days
 
         scenario = LogisticsScenario(
@@ -667,7 +748,7 @@ class GridSearchOptimizer:
                 download_fee_per_node=0.0,
             )
         ).estimate(
-            geometry.receiver_count,
+            live_receiver_nodes,
             logistics_summary.expected_node_rental_days,
         )
         cost_summary = CostModel().estimate(
@@ -709,7 +790,7 @@ class GridSearchOptimizer:
             coverage_percent=illumination_summary.coverage_percent,
             orientation_coverage=orientation_coverage,
             acquisition_days=production_summary.critical_path_days,
-            node_count=geometry.receiver_count,
+            node_count=live_receiver_nodes,
             config=config,
         )
 
@@ -717,7 +798,7 @@ class GridSearchOptimizer:
 
         optimization_score = self._score_candidate(
             estimated_profit=estimated_profit,
-            node_count=geometry.receiver_count,
+            node_count=live_receiver_nodes,
             acquisition_days=production_summary.critical_path_days,
             shipping_cost=shipping["selected_shipping_cost"],
             interior_fold=interior_fold,
@@ -739,7 +820,7 @@ class GridSearchOptimizer:
             coverage_percent=illumination_summary.coverage_percent,
             orientation_coverage=orientation_coverage,
             acquisition_days=float(production_summary.critical_path_days),
-            required_node_count=geometry.receiver_count,
+            required_node_count=live_receiver_nodes,
             node_rental_cost=node_rental_summary.total_node_cost,
             shipping_cost=shipping["selected_shipping_cost"],
             labor_cost=self.business_model.total_crew_cost(field_days),
@@ -1473,11 +1554,35 @@ class GridSearchOptimizer:
             "",
             confidence,
             "",
-            "==================================================",
         ]
+
+        lines.extend(self._preset_section_lines(len(all_candidates)))
+
+        lines.extend([
+            "==================================================",
+        ])
 
         decision_summary_path = self.project_folder / "optimizer_decision_summary.txt"
         self._write_text_file(decision_summary_path, "\n".join(lines))
+
+    #################################################################
+
+    def _preset_section_lines(self, candidate_count):
+        if not self.preset_info:
+            return []
+
+        priorities = self.preset_info.get("objective_priorities", [])
+        priorities_text = ", ".join(str(item) for item in priorities) if priorities else "N/A"
+
+        return [
+            "OPTIMIZATION PRESET",
+            "",
+            f"Preset Name: {self.preset_info.get('display_name', 'Unknown')}",
+            f"Primary Objective: {self.preset_info.get('primary_objective', 'N/A')}",
+            f"Search Space Size: {candidate_count}",
+            f"Objective Priorities: {priorities_text}",
+            "",
+        ]
 
     #################################################################
 

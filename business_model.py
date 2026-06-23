@@ -302,6 +302,20 @@ class BusinessModel:
 
     #################################################################
 
+    def live_receiver_nodes(self, geometry):
+        active_lines = int(getattr(getattr(geometry, "survey", None), "active_receiver_lines", 0) or 0)
+        receivers = list(getattr(geometry, "receivers", []))
+
+        if active_lines <= 0 or not receivers:
+            return int(getattr(geometry, "receiver_count", 0) or 0)
+
+        first_line = min(receiver.line for receiver in receivers)
+        stations_per_line = sum(1 for receiver in receivers if receiver.line == first_line)
+
+        return int(active_lines * stations_per_line)
+
+    #################################################################
+
     @property
     def vehicles_required(self):
         return 1 if self.contractors_total < 3 else 2
@@ -515,6 +529,10 @@ class BusinessModel:
             f"Hotel Cost                    : ${self.hotel_cost(acquisition_days):.2f}",
             f"Per Diem Cost                 : ${self.per_diem_cost(acquisition_days):.2f}",
             f"Equipment Cost                : ${self.total_equipment_cost(acquisition_days):.2f}",
+            f"Live Nodes Leased             : {int(round(receiver_nodes))}",
+            f"Node Rental Days              : {float(node_rental_days):.2f}",
+            f"Shipping Weight (kg)          : {shipping['total_weight_lb'] * 0.45359237:.2f}",
+            f"Pallet Count                  : {shipping['pallet_count']}",
             f"Node Rental Cost              : ${self.node_rental_cost(receiver_nodes, node_rental_days):.2f}",
             "Owner Transportation",
             f"Drivers                       : {shipping['owner_drivers']}",

@@ -175,7 +175,7 @@ class DesignSpaceAnalysis:
         cmp_grid = CMPAnalysis(survey, geometry).generate()
         cmp_grid = CMPPopulator(cmp_grid, geometry, acquisition).populate()
 
-        true_fold = TrueFoldAnalysis(cmp_grid).analyze()
+        true_fold = TrueFoldAnalysis(cmp_grid, survey.target_depth, 40.0).analyze()
         ava = AVAAnalysis(cmp_grid, survey.target_depth, survey.maximum_incidence_angle).analyze()
         avaz = AVAzAnalysis(cmp_grid).analyze()
         illumination = IlluminationAnalysis(cmp_grid).analyze()
@@ -186,14 +186,15 @@ class DesignSpaceAnalysis:
                 node_pickups_per_day=self.business_model.production.node_pickups_per_day,
             )
         ).estimate([], geometry)
+        live_receiver_nodes = self.business_model.live_receiver_nodes(geometry)
         inventory = EquipmentInventory(
-            receiver_nodes=geometry.receiver_count,
+            receiver_nodes=live_receiver_nodes,
             node_weight_kg=self.business_model.node_logistics.node_weight_lb * 0.45359237,
             empty_pallet_weight_kg=self.business_model.node_logistics.pallet_weight_lb * 0.45359237,
             maximum_payload_per_pallet_kg=self.business_model.node_logistics.maximum_payload_per_pallet_lb * 0.45359237,
-            active_receiver_nodes=geometry.receiver_count,
+            active_receiver_nodes=live_receiver_nodes,
         )
-        shipping = self.business_model.node_shipping_options(geometry.receiver_count, gis)
+        shipping = self.business_model.node_shipping_options(live_receiver_nodes, gis)
         field_days = production_summary.critical_path_days
 
         scenario = LogisticsScenario(
@@ -215,7 +216,7 @@ class DesignSpaceAnalysis:
                 download_fee_per_node=0.0,
             )
         ).estimate(
-            geometry.receiver_count,
+            live_receiver_nodes,
             logistics_summary.expected_node_rental_days,
         )
         cost_summary = CostModel().estimate(
@@ -243,7 +244,7 @@ class DesignSpaceAnalysis:
             average_offset=self._average_offset(geometry),
             maximum_incidence_angle=ava.maximum_incidence_angle,
             avaz_quality=avaz.azimuth_range,
-            node_count=geometry.receiver_count,
+            node_count=live_receiver_nodes,
             acquisition_days=float(production_summary.critical_path_days),
             internal_cost=internal_cost,
             client_price=pricing["client_price"],

@@ -20,6 +20,7 @@ class FoldAuditValidation:
 
         self.x_centers = sorted({bin_record.xy[0] for bin_record in self.bins})
         self.y_centers = sorted({bin_record.xy[1] for bin_record in self.bins})
+        self.maximum_fold_offset = self._maximum_fold_offset()
 
     #################################################################
 
@@ -142,7 +143,10 @@ class FoldAuditValidation:
     #################################################################
 
     def _validation_independent_fold_calculation(self):
-        fold_a = {bin_record.xy: int(getattr(bin_record, "trace_count", 0)) for bin_record in self.bins}
+        fold_a = {
+            bin_record.xy: sum(1 for trace in getattr(bin_record, "traces", []) if self._is_usable_trace(trace))
+            for bin_record in self.bins
+        }
 
         fold_b = {bin_record.xy: 0 for bin_record in self.bins}
 
@@ -154,6 +158,9 @@ class FoldAuditValidation:
 
             for bin_record in self.live_bins:
                 for trace in getattr(bin_record, "traces", []):
+                    if not self._is_usable_trace(trace):
+                        continue
+
                     x_index = self._nearest_index(trace.midpoint_x, x_origin, x_step, len(self.x_centers))
                     y_index = self._nearest_index(trace.midpoint_y, y_origin, y_step, len(self.y_centers))
                     cmp_key = (self.x_centers[x_index], self.y_centers[y_index])
@@ -189,7 +196,7 @@ class FoldAuditValidation:
         audit_p95 = self._percentile(live_folds, 0.95)
         audit_p99 = self._percentile(live_folds, 0.99)
 
-        fold_analysis = TrueFoldAnalysis(self.cmp_grid)
+        fold_analysis = TrueFoldAnalysis(self.cmp_grid, self.survey.target_depth, 40.0)
         current_median = fold_analysis._percentile(live_folds, 0.50)
         current_p95 = fold_analysis._percentile(live_folds, 0.95)
         current_p99 = fold_analysis._percentile(live_folds, 0.99)
@@ -232,7 +239,8 @@ class FoldAuditValidation:
         for bin_record in self.live_bins:
             x_value, y_value = bin_record.xy
             if interior_xmin <= x_value <= interior_xmax and interior_ymin <= y_value <= interior_ymax:
-                interior_folds.append(int(getattr(bin_record, "trace_count", 0)))
+                usable_count = sum(1 for trace in getattr(bin_record, "traces", []) if self._is_usable_trace(trace))
+                interior_folds.append(usable_count)
 
         interior_folds.sort()
 
@@ -280,11 +288,7 @@ class FoldAuditValidation:
     #################################################################
 
     def _validation_trace_accounting(self):
-        maximum_offset = (
-            2.0
-            * self.survey.target_depth
-            * math.tan(math.radians(self.survey.maximum_incidence_angle))
-        )
+        maximum_offset = self.maximum_fold_offset
 
         total_generated = 0
         accepted_reconstructed = 0
@@ -333,6 +337,23 @@ class FoldAuditValidation:
         print("PASS" if passed else "FAIL")
 
         return passed
+
+    #################################################################
+
+    def _is_usable_trace(self, trace):
+        if self.survey.target_depth <= 0.0:
+            return True
+
+        incidence_angle = math.degrees(math.atan(float(trace.offset) / (2.0 * self.survey.target_depth)))
+        return incidence_angle <= 40.0
+
+    #################################################################
+
+    def _maximum_fold_offset(self):
+        if self.survey.target_depth <= 0.0:
+            return 0.0
+
+        return 2.0 * self.survey.target_depth * math.tan(math.radians(40.0))
 
     #################################################################
 

@@ -13,6 +13,10 @@ class TrueFoldSummary:
     total_bins: int
     live_bins: int
     dead_bins: int
+    usable_fold_traces: int = 0
+    rejected_high_angle_traces: int = 0
+    maximum_fold_offset: float = 0.0
+    maximum_incidence_angle_deg: float = 40.0
 
     #################################################################
 
@@ -41,8 +45,10 @@ class TrueFoldSummary:
 class TrueFoldAnalysis:
     """Analyzes live and dead CMP bins to compute true spatial fold statistics."""
 
-    def __init__(self, cmp_grid):
+    def __init__(self, cmp_grid, target_depth, maximum_incidence_angle_deg=40.0):
         self.cmp_grid = cmp_grid
+        self.target_depth = float(target_depth)
+        self.maximum_incidence_angle_deg = float(maximum_incidence_angle_deg)
 
     #################################################################
 
@@ -59,12 +65,54 @@ class TrueFoldAnalysis:
                 total_bins=0,
                 live_bins=0,
                 dead_bins=0,
+                usable_fold_traces=0,
+                rejected_high_angle_traces=0,
+                maximum_fold_offset=0.0,
+                maximum_incidence_angle_deg=self.maximum_incidence_angle_deg,
             )
 
-        folds = [bin_record.trace_count for bin_record in bins]
-        total_bins = len(folds)
-        live_bins = sum(1 for fold in folds if fold > 0)
-        dead_bins = sum(1 for fold in folds if fold == 0)
+        usable_folds = []
+        rejected_high_angle_traces = 0
+        usable_fold_traces = 0
+        maximum_fold_offset = self._maximum_fold_offset()
+
+        for bin_record in bins:
+            usable_count = 0
+            for trace in getattr(bin_record, "traces", []):
+                angle_deg = self._incidence_angle(trace.offset)
+                if angle_deg > self.maximum_incidence_angle_deg:
+                    rejected_high_angle_traces += 1
+                    continue
+
+                usable_count += 1
+                usable_fold_traces += 1
+
+            usable_folds.append(usable_count)
+
+        print("==================================================")
+        print("USABLE FOLD FILTER")
+        print("==================================================")
+        print("Maximum Incidence Angle")
+        print()
+        print(f"{self.maximum_incidence_angle_deg:.0f}{chr(176)}")
+        print()
+        print("Maximum Fold Offset")
+        print()
+        print(f"{maximum_fold_offset:.0f} ft")
+        print()
+        print("Rejected High-Angle Traces")
+        print()
+        print(f"{rejected_high_angle_traces}")
+        print()
+        print("Accepted Fold Traces")
+        print()
+        print(f"{usable_fold_traces}")
+        print("==================================================")
+
+        folds = [fold for fold in usable_folds if fold > 0]
+        total_bins = len(usable_folds)
+        live_bins = sum(1 for fold in usable_folds if fold > 0)
+        dead_bins = sum(1 for fold in usable_folds if fold == 0)
 
         if live_bins == 0:
             live_folds = []
@@ -72,7 +120,7 @@ class TrueFoldAnalysis:
             maximum_fold = 0
             average_fold = 0.0
         else:
-            live_folds = [fold for fold in folds if fold > 0]
+            live_folds = folds
             minimum_fold = min(live_folds)
             maximum_fold = max(live_folds)
             average_fold = sum(live_folds) / live_bins
@@ -90,6 +138,10 @@ class TrueFoldAnalysis:
             total_bins=total_bins,
             live_bins=live_bins,
             dead_bins=dead_bins,
+            usable_fold_traces=usable_fold_traces,
+            rejected_high_angle_traces=rejected_high_angle_traces,
+            maximum_fold_offset=maximum_fold_offset,
+            maximum_incidence_angle_deg=self.maximum_incidence_angle_deg,
         )
 
     #################################################################
@@ -116,6 +168,22 @@ class TrueFoldAnalysis:
         upper_value = sorted_values[upper_index]
 
         return lower_value + (upper_value - lower_value) * weight
+
+    #################################################################
+
+    def _incidence_angle(self, offset):
+        if self.target_depth <= 0.0:
+            return 0.0
+
+        return math.degrees(math.atan(float(offset) / (2.0 * self.target_depth)))
+
+    #################################################################
+
+    def _maximum_fold_offset(self):
+        if self.target_depth <= 0.0:
+            return 0.0
+
+        return 2.0 * self.target_depth * math.tan(math.radians(self.maximum_incidence_angle_deg))
 
     #################################################################
 

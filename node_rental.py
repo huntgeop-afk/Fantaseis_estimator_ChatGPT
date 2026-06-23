@@ -29,7 +29,7 @@ class NodeRentalSummary:
     def summary(self):
         return "\n".join([
             "Node Rental Summary",
-            f"Receiver Nodes: {self.receiver_nodes}",
+            f"Live Nodes Leased: {self.receiver_nodes}",
             f"Rental Days: {self.rental_days}",
             f"Rental Cost: ${self.rental_cost:.2f}",
             f"Preparation Cost: ${self.prep_cost:.2f}",

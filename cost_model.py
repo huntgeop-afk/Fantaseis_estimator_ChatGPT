@@ -17,7 +17,7 @@ class CostSummary:
     def summary(self):
         return "\n".join([
             "Survey Cost Summary",
-            f"Receiver Nodes : {self.receiver_nodes}",
+            f"Live Nodes Leased : {self.receiver_nodes}",
             f"Shots : {self.shots}",
             f"Field Days : {self.field_days}",
             f"Node Rental Cost : ${self.node_rental_cost:.2f}",
@@ -42,7 +42,7 @@ class CostModel:
         logistics_summary,
         node_rental_summary,
     ):
-        receiver_nodes = geometry.receiver_count
+        receiver_nodes = self._live_receiver_nodes(geometry)
         shots = geometry.shot_count
         field_days = production_summary.critical_path_days
         node_rental_cost = node_rental_summary.total_node_cost
@@ -58,3 +58,17 @@ class CostModel:
             logistics_cost=logistics_cost,
             total_project_cost=total_project_cost,
         )
+
+    #################################################################
+
+    def _live_receiver_nodes(self, geometry):
+        active_lines = int(getattr(getattr(geometry, "survey", None), "active_receiver_lines", 0) or 0)
+        receivers = list(getattr(geometry, "receivers", []))
+
+        if active_lines <= 0 or not receivers:
+            return int(getattr(geometry, "receiver_count", 0) or 0)
+
+        first_line = min(receiver.line for receiver in receivers)
+        stations_per_line = sum(1 for receiver in receivers if receiver.line == first_line)
+
+        return int(active_lines * stations_per_line)
