@@ -2,6 +2,7 @@ import copy
 import csv
 import math
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
@@ -101,6 +102,22 @@ class DesignSpaceAnalysis:
         ("Optimization Score", "optimization_score"),
     ]
 
+    CSV_METRIC_MAP = {
+        "average_fold": "average_fold",
+        "maximum_fold": "maximum_fold",
+        "coverage_percent": "coverage_percent",
+        "maximum_offset": "maximum_offset",
+        "average_offset": "average_offset",
+        "maximum_incidence_angle": "maximum_incidence_angle",
+        "avaz_quality": "avaz_range",
+        "node_count": "required_node_count",
+        "acquisition_days": "acquisition_days",
+        "internal_cost": "total_internal_cost",
+        "client_price": "estimated_client_bid_price",
+        "expected_profit": "estimated_profit",
+        "optimization_score": "optimization_score",
+    }
+
     def __init__(self, project_folder, business_model=None):
         self.project_folder = Path(project_folder)
         self.results_csv = self.project_folder / "optimization_results.csv"
@@ -111,10 +128,13 @@ class DesignSpaceAnalysis:
         self.insights_txt = self.project_folder / "engineering_insights.txt"
         self.base_survey = Survey.load(self.project_folder)
         self.business_model = business_model if business_model is not None else BusinessModel(project_folder)
+        self._reset_performance()
 
     #################################################################
 
     def run(self):
+        self._reset_performance()
+        run_start = time.perf_counter()
         raw_rows = self._read_results()
         if not raw_rows:
             raise FileNotFoundError(f"No optimization results found in {self.results_csv}")
@@ -138,7 +158,10 @@ class DesignSpaceAnalysis:
         self._write_top_design_comparison(pareto_frontier)
         self._write_text_outputs(range_analysis, sensitivity_rank, pareto_frontier, preferred_design, insights)
 
+        self._performance["new_runtime_seconds"] = time.perf_counter() - run_start
+        self._performance["old_runtime_seconds"] = None
         self._print_console_summary(analyses, sensitivity_rank, pareto_frontier, preferred_design)
+        self._print_performance_report(len(analyses))
         self._print_completion_banner()
 
         return {
@@ -158,78 +181,287 @@ class DesignSpaceAnalysis:
 
     #################################################################
 
-    def _analyze_candidate(self, row, gis):
+    def _reset_performance(self):
+        self._performance = {
+            "cmp_population_calls_after": 0,
+            "engineering_recomputation_count_after": 0,
+            "fallback_counts": {},
+            "timings": {},
+            "new_runtime_seconds": 0.0,
+            "old_runtime_seconds": 0.0,
+        }
+
+    #################################################################
+
+    def _add_timing(self, name, elapsed):
+        self._performance["timings"][name] = self._performance["timings"].get(name, 0.0) + float(elapsed)
+
+    #################################################################
+
+    def _timed_call(self, name, func, *args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        self._add_timing(name, time.perf_counter() - start)
+        return result
+
+    #################################################################
+
+    def _note_fallback(self, metric_name):
+        fallback_counts = self._performance["fallback_counts"]
+        fallback_counts[metric_name] = fallback_counts.get(metric_name, 0) + 1
+
+    #################################################################
+
+    def _row_float(self, row, key, default=None):
+        value = row.get(key)
+        if value is None:
+            return default
+
+        text = str(value).strip()
+        if not text:
+            return default
+
+        return float(text)
+
+    #################################################################
+
+    def _row_int(self, row, key, default=None):
+        value = self._row_float(row, key, default=None)
+        if value is None:
+            return default
+        return int(float(value))
+
+    #################################################################
+
+    def _build_survey_from_row(self, row):
         survey = copy.deepcopy(self.base_survey)
         survey.receiver_line_spacing = float(row["receiver_line_spacing"])
         survey.receiver_interval = float(row["receiver_interval"])
         survey.source_line_spacing = float(row["source_line_spacing"])
         survey.shot_interval = float(row["shot_interval"])
         survey.active_receiver_lines = int(float(row["active_receiver_lines"]))
+        return survey
 
-        geometry = Geometry(survey, gis)
-        geometry.generate()
+    #################################################################
 
-        acquisition = AcquisitionSimulator(survey, geometry)
-        acquisition.generate_schedule()
+    def _candidate_profit_margin(self, client_price, expected_profit):
+        client = float(client_price)
+        profit = float(expected_profit)
+        return 0.0 if math.isclose(client, 0.0) else profit / client
 
-        cmp_grid = CMPAnalysis(survey, geometry).generate()
-        cmp_grid = CMPPopulator(cmp_grid, geometry, acquisition).populate()
+    #################################################################
 
-        true_fold = TrueFoldAnalysis(cmp_grid, survey.target_depth, 40.0).analyze()
-        ava = AVAAnalysis(cmp_grid, survey.target_depth, survey.maximum_incidence_angle).analyze()
-        avaz = AVAzAnalysis(cmp_grid).analyze()
-        illumination = IlluminationAnalysis(cmp_grid).analyze()
-        production_summary = ProductionModel(
-            ProductionRates(
-                shots_per_day=self.business_model.production.shots_per_day,
-                node_deployments_per_day=self.business_model.production.node_deployments_per_day,
-                node_pickups_per_day=self.business_model.production.node_pickups_per_day,
+    def _analyze_candidate(self, row, gis):
+        survey = self._build_survey_from_row(row)
+        recomputed = False
+        state = {}
+
+        def ensure_geometry():
+            nonlocal recomputed
+            if "geometry" not in state:
+                recomputed = True
+                geometry = Geometry(survey, gis)
+                geometry.generate()
+                state["geometry"] = geometry
+            return state["geometry"]
+
+        def ensure_acquisition():
+            if "acquisition" not in state:
+                geometry = ensure_geometry()
+                acquisition = AcquisitionSimulator(survey, geometry)
+                acquisition.generate_schedule()
+                state["acquisition"] = acquisition
+            return state["acquisition"]
+
+        def ensure_cmp_grid():
+            if "cmp_grid" not in state:
+                geometry = ensure_geometry()
+                acquisition = ensure_acquisition()
+                cmp_grid = CMPAnalysis(survey, geometry).generate()
+                cmp_grid = self._timed_call(
+                    "cmp_population_seconds",
+                    lambda: CMPPopulator(cmp_grid, geometry, acquisition).populate(),
+                )
+                self._performance["cmp_population_calls_after"] += 1
+                state["cmp_grid"] = cmp_grid
+            return state["cmp_grid"]
+
+        def fallback_true_fold():
+            self._note_fallback("maximum_fold")
+            cmp_grid = ensure_cmp_grid()
+            if "true_fold" not in state:
+                state["true_fold"] = self._timed_call(
+                    "true_fold_seconds",
+                    lambda: TrueFoldAnalysis(cmp_grid, survey.target_depth, 40.0).analyze(),
+                )
+            return state["true_fold"]
+
+        def fallback_average_offset():
+            self._note_fallback("average_offset")
+            geometry = ensure_geometry()
+            return self._timed_call("average_offset_seconds", lambda: self._average_offset(geometry))
+
+        def fallback_ava():
+            self._note_fallback("maximum_incidence_angle")
+            cmp_grid = ensure_cmp_grid()
+            if "ava" not in state:
+                state["ava"] = self._timed_call(
+                    "ava_seconds",
+                    lambda: AVAAnalysis(cmp_grid, survey.target_depth, survey.maximum_incidence_angle).analyze(),
+                )
+            return state["ava"]
+
+        def fallback_avaz():
+            self._note_fallback("avaz_quality")
+            cmp_grid = ensure_cmp_grid()
+            if "avaz" not in state:
+                state["avaz"] = self._timed_call(
+                    "avaz_seconds",
+                    lambda: AVAzAnalysis(cmp_grid).analyze(),
+                )
+            return state["avaz"]
+
+        def fallback_illumination():
+            self._note_fallback("coverage_percent")
+            cmp_grid = ensure_cmp_grid()
+            if "illumination" not in state:
+                state["illumination"] = self._timed_call(
+                    "illumination_seconds",
+                    lambda: IlluminationAnalysis(cmp_grid).analyze(),
+                )
+            return state["illumination"]
+
+        def fallback_business_metrics():
+            self._note_fallback("business_metrics")
+            geometry = ensure_geometry()
+            if "business_metrics" in state:
+                return state["business_metrics"]
+
+            start = time.perf_counter()
+            production_summary = ProductionModel(
+                ProductionRates(
+                    shots_per_day=self.business_model.production.shots_per_day,
+                    node_deployments_per_day=self.business_model.production.node_deployments_per_day,
+                    node_pickups_per_day=self.business_model.production.node_pickups_per_day,
+                )
+            ).estimate([], geometry)
+            live_receiver_nodes = self.business_model.live_receiver_nodes(geometry)
+            inventory = EquipmentInventory(
+                receiver_nodes=live_receiver_nodes,
+                node_weight_kg=self.business_model.node_logistics.node_weight_lb * 0.45359237,
+                empty_pallet_weight_kg=self.business_model.node_logistics.pallet_weight_lb * 0.45359237,
+                maximum_payload_per_pallet_kg=self.business_model.node_logistics.maximum_payload_per_pallet_lb * 0.45359237,
+                active_receiver_nodes=live_receiver_nodes,
             )
-        ).estimate([], geometry)
-        live_receiver_nodes = self.business_model.live_receiver_nodes(geometry)
-        inventory = EquipmentInventory(
-            receiver_nodes=live_receiver_nodes,
-            node_weight_kg=self.business_model.node_logistics.node_weight_lb * 0.45359237,
-            empty_pallet_weight_kg=self.business_model.node_logistics.pallet_weight_lb * 0.45359237,
-            maximum_payload_per_pallet_kg=self.business_model.node_logistics.maximum_payload_per_pallet_lb * 0.45359237,
-            active_receiver_nodes=live_receiver_nodes,
-        )
-        shipping = self.business_model.node_shipping_options(live_receiver_nodes, gis)
-        field_days = production_summary.critical_path_days
-
-        scenario = LogisticsScenario(
-            name="Default",
-            transport_method="Truck",
-            outbound_days_min=shipping["selected_outbound_days"],
-            outbound_days_most_likely=shipping["selected_outbound_days"],
-            outbound_days_max=shipping["selected_outbound_days"],
-            return_days_min=shipping["selected_return_days"],
-            return_days_most_likely=shipping["selected_return_days"],
-            return_days_max=shipping["selected_return_days"],
-            shipping_details=shipping,
-        )
-        logistics_summary = LogisticsModel(inventory, scenario).estimate(production_summary.critical_path_days)
-        node_rental_summary = NodeRentalModel(
-            NodeRentalRates(
-                daily_rental_rate=self.business_model.node_logistics.node_rental_per_node_day,
-                prep_fee_per_node=0.0,
-                download_fee_per_node=0.0,
+            shipping = self.business_model.node_shipping_options(live_receiver_nodes, gis)
+            scenario = LogisticsScenario(
+                name="Default",
+                transport_method="Truck",
+                outbound_days_min=shipping["selected_outbound_days"],
+                outbound_days_most_likely=shipping["selected_outbound_days"],
+                outbound_days_max=shipping["selected_outbound_days"],
+                return_days_min=shipping["selected_return_days"],
+                return_days_most_likely=shipping["selected_return_days"],
+                return_days_max=shipping["selected_return_days"],
+                shipping_details=shipping,
             )
-        ).estimate(
-            live_receiver_nodes,
-            logistics_summary.expected_node_rental_days,
-        )
-        cost_summary = CostModel().estimate(
-            geometry,
-            production_summary,
-            logistics_summary,
-            node_rental_summary,
-        )
+            logistics_summary = LogisticsModel(inventory, scenario).estimate(production_summary.critical_path_days)
+            node_rental_summary = NodeRentalModel(
+                NodeRentalRates(
+                    daily_rental_rate=self.business_model.node_logistics.node_rental_per_node_day,
+                    prep_fee_per_node=0.0,
+                    download_fee_per_node=0.0,
+                )
+            ).estimate(
+                live_receiver_nodes,
+                logistics_summary.expected_node_rental_days,
+            )
+            cost_summary = CostModel().estimate(
+                geometry,
+                production_summary,
+                logistics_summary,
+                node_rental_summary,
+            )
+            internal_cost = float(
+                cost_summary.total_project_cost
+                if hasattr(cost_summary, "total_project_cost")
+                else getattr(cost_summary, "total_cost", 0.0)
+            )
+            pricing = self.business_model.price_from_internal_cost(internal_cost)
+            self._add_timing("business_recomputation_seconds", time.perf_counter() - start)
+            state["business_metrics"] = {
+                "node_count": live_receiver_nodes,
+                "acquisition_days": float(production_summary.critical_path_days),
+                "internal_cost": internal_cost,
+                "client_price": float(pricing["client_price"]),
+                "expected_profit": float(pricing["expected_profit"]),
+                "profit_margin": float(pricing["profit_margin"]),
+            }
+            return state["business_metrics"]
+
+        average_fold = self._row_float(row, "average_fold")
+        if average_fold is None:
+            self._note_fallback("average_fold")
+            average_fold = fallback_true_fold().average_fold
+
+        maximum_fold = self._row_float(row, "maximum_fold")
+        if maximum_fold is None:
+            maximum_fold = fallback_true_fold().maximum_fold
+
+        coverage_percent = self._row_float(row, "coverage_percent")
+        if coverage_percent is None:
+            coverage_percent = fallback_illumination().coverage_percent
+
+        maximum_offset = self._row_float(row, "maximum_offset")
+        if maximum_offset is None:
+            maximum_offset = fallback_ava().maximum_offset
+
+        average_offset = self._row_float(row, "average_offset")
+        if average_offset is None:
+            average_offset = fallback_average_offset()
+
+        maximum_incidence_angle = self._row_float(row, "maximum_incidence_angle")
+        if maximum_incidence_angle is None:
+            maximum_incidence_angle = fallback_ava().maximum_incidence_angle
+
+        avaz_quality = self._row_float(row, "avaz_range")
+        if avaz_quality is None:
+            avaz_quality = fallback_avaz().azimuth_range
+
+        node_count = self._row_int(row, "required_node_count")
+        acquisition_days = self._row_float(row, "acquisition_days")
+        internal_cost = self._row_float(row, "total_internal_cost")
+        client_price = self._row_float(row, "estimated_client_bid_price")
+        expected_profit = self._row_float(row, "estimated_profit")
+
+        if (
+            node_count is None
+            or acquisition_days is None
+            or internal_cost is None
+            or client_price is None
+            or expected_profit is None
+        ):
+            business_metrics = fallback_business_metrics()
+            if node_count is None:
+                node_count = int(business_metrics["node_count"])
+            if acquisition_days is None:
+                acquisition_days = float(business_metrics["acquisition_days"])
+            if internal_cost is None:
+                internal_cost = float(business_metrics["internal_cost"])
+            if client_price is None:
+                client_price = float(business_metrics["client_price"])
+            if expected_profit is None:
+                expected_profit = float(business_metrics["expected_profit"])
+            profit_margin = float(business_metrics["profit_margin"])
+        else:
+            profit_margin = self._candidate_profit_margin(client_price, expected_profit)
 
         rejection_reason = str(row.get("rejection_reason", "")).strip()
         valid = str(row.get("is_valid", "")).strip().lower() == "true"
-        internal_cost = float(cost_summary.total_project_cost if hasattr(cost_summary, "total_project_cost") else getattr(cost_summary, "total_cost", 0.0))
-        pricing = self.business_model.price_from_internal_cost(internal_cost)
+        optimization_score = float(row.get("optimization_score", 0.0) or 0.0)
+
+        if recomputed:
+            self._performance["engineering_recomputation_count_after"] += 1
 
         return CandidateAnalysis(
             receiver_line_spacing=survey.receiver_line_spacing,
@@ -237,21 +469,21 @@ class DesignSpaceAnalysis:
             source_line_spacing=survey.source_line_spacing,
             shot_interval=survey.shot_interval,
             active_receiver_lines=survey.active_receiver_lines,
-            average_fold=true_fold.average_fold,
-            maximum_fold=true_fold.maximum_fold,
-            coverage_percent=illumination.coverage_percent,
-            maximum_offset=ava.maximum_offset,
-            average_offset=self._average_offset(geometry),
-            maximum_incidence_angle=ava.maximum_incidence_angle,
-            avaz_quality=avaz.azimuth_range,
-            node_count=live_receiver_nodes,
-            acquisition_days=float(production_summary.critical_path_days),
+            average_fold=average_fold,
+            maximum_fold=maximum_fold,
+            coverage_percent=coverage_percent,
+            maximum_offset=maximum_offset,
+            average_offset=average_offset,
+            maximum_incidence_angle=maximum_incidence_angle,
+            avaz_quality=avaz_quality,
+            node_count=node_count,
+            acquisition_days=float(acquisition_days),
             internal_cost=internal_cost,
-            client_price=pricing["client_price"],
-            expected_profit=pricing["expected_profit"],
-            profit_margin=pricing["profit_margin"],
-            client_cost=pricing["client_price"],
-            optimization_score=float(row.get("optimization_score", 0.0) or 0.0),
+            client_price=client_price,
+            expected_profit=expected_profit,
+            profit_margin=profit_margin,
+            client_cost=client_price,
+            optimization_score=optimization_score,
             valid=valid,
             rejection_reason=rejection_reason,
         )
@@ -483,34 +715,6 @@ class DesignSpaceAnalysis:
 
     #################################################################
 
-    def _build_insights(self, analyses, sensitivity_rank, range_analysis, preferred_design):
-        insights = []
-        if sensitivity_rank:
-            top = sensitivity_rank[0]
-            insights.append(f"{top['label']} is the most influential engineering variable across the evaluated design space.")
-
-        if len(sensitivity_rank) > 1:
-            second = sensitivity_rank[1]
-            insights.append(f"{second['label']} is the next strongest tradeoff variable.")
-
-        ranked_ranges = sorted(range_analysis, key=lambda item: (item["preferred_max"] - item["preferred_min"], item["label"]))
-        if ranked_ranges:
-            tightest = ranked_ranges[0]
-            widest = ranked_ranges[-1]
-            insights.append(f"{widest['label']} is the most forgiving parameter window.")
-            insights.append(f"{tightest['label']} requires the tightest engineering control.")
-
-        insights.append("Node count, acquisition days, and client cost should be balanced against fold and coverage objectives.")
-
-        if preferred_design.stability_score >= 0.9:
-            insights.append("The preferred design remains stable across nearby parameter perturbations.")
-        else:
-            insights.append("The preferred design shows moderate sensitivity to nearby parameter perturbations.")
-
-        return insights
-
-    #################################################################
-
     def _write_pareto_frontier(self, pareto_frontier):
         fieldnames = [
             "pareto_rank",
@@ -724,6 +928,54 @@ class DesignSpaceAnalysis:
         print("Pareto Frontier Computed")
         print("Engineering Insights Generated")
         print("Preferred Design Selected")
+        print("==================================================")
+
+    #################################################################
+
+    def _print_performance_report(self, candidate_count):
+        old_runtime = self._performance.get("old_runtime_seconds")
+        new_runtime = float(self._performance.get("new_runtime_seconds", 0.0))
+        speedup = None
+        if old_runtime is not None and new_runtime > 0.0:
+            speedup = float(old_runtime) / new_runtime
+
+        print("==================================================")
+        print("DESIGN SPACE ANALYSIS PERFORMANCE")
+        print("==================================================")
+        print("Candidates")
+        print(candidate_count)
+        print("Old Runtime")
+        if old_runtime is None:
+            print("N/A")
+        else:
+            print(f"{float(old_runtime):.2f} seconds")
+        print("New Runtime")
+        print(f"{new_runtime:.2f} seconds")
+        print("Speedup Factor")
+        if speedup is None:
+            print("N/A")
+        else:
+            print(f"{speedup:.2f}x")
+        print()
+        print("CMP Population Calls")
+        print("Before")
+        print(candidate_count)
+        print("After")
+        print(self._performance["cmp_population_calls_after"])
+        print()
+        print("Engineering Recomputation Count")
+        print("Before")
+        print(candidate_count)
+        print("After")
+        print(self._performance["engineering_recomputation_count_after"])
+        print()
+        print("Fallbacks Used")
+        fallback_counts = self._performance["fallback_counts"]
+        if not fallback_counts:
+            print("None")
+        else:
+            for metric_name in sorted(fallback_counts):
+                print(f"{metric_name} : {fallback_counts[metric_name]}")
         print("==================================================")
 
     #################################################################

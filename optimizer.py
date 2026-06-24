@@ -116,7 +116,9 @@ class CandidateResult:
     active_receiver_lines: int
     interior_fold: float
     average_fold: float
+    maximum_fold: float
     maximum_offset: float
+    average_offset: float
     minimum_offset: float
     maximum_incidence_angle: float
     coverage_percent: float
@@ -767,6 +769,7 @@ class GridSearchOptimizer:
 
         minimum_offset = min(offsets) if offsets else 0.0
         maximum_offset = max(offsets) if offsets else 0.0
+        average_offset = (sum(offsets) / len(offsets)) if offsets else 0.0
 
         if orientations:
             minimum_orientation = min(orientations)
@@ -814,7 +817,9 @@ class GridSearchOptimizer:
             active_receiver_lines=survey_candidate.active_receiver_lines,
             interior_fold=interior_fold,
             average_fold=fold_summary.average_fold,
+            maximum_fold=fold_summary.maximum_fold,
             maximum_offset=maximum_offset,
+            average_offset=average_offset,
             minimum_offset=minimum_offset,
             maximum_incidence_angle=ava_summary.maximum_incidence_angle,
             coverage_percent=illumination_summary.coverage_percent,
@@ -944,7 +949,9 @@ class GridSearchOptimizer:
             "active_receiver_lines",
             "interior_fold",
             "average_fold",
+            "maximum_fold",
             "maximum_offset",
+            "average_offset",
             "minimum_offset",
             "maximum_incidence_angle",
             "coverage_percent",
