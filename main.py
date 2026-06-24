@@ -324,8 +324,8 @@ def _terminate_pid(pid, force=False):
     subprocess.run(["powershell", "-NoProfile", "-Command", command], check=False)
 
 
-def _count_locked_files(project_folder):
-    candidates = [
+def _generated_output_files(project_folder):
+    return [
         Path(project_folder) / "optimization_results.csv",
         Path(project_folder) / "top_20_designs.csv",
         Path(project_folder) / "optimizer_decision_summary.txt",
@@ -334,17 +334,23 @@ def _count_locked_files(project_folder):
         Path(project_folder) / "engineering_recommendation.txt",
     ]
 
-    locked = 0
-    for file_path in candidates:
+def _remove_stale_output_files(project_folder):
+    found = 0
+    removed = 0
+    failed = 0
+
+    for file_path in _generated_output_files(project_folder):
         if not file_path.exists():
             continue
-        try:
-            with open(file_path, "a", encoding="utf-8"):
-                pass
-        except OSError:
-            locked += 1
 
-    return locked
+        found += 1
+        try:
+            file_path.unlink()
+            removed += 1
+        except OSError:
+            failed += 1
+
+    return found, removed, failed
 
 
 def _run_cleanup(project_folder):
@@ -384,7 +390,7 @@ def _run_cleanup(project_folder):
     ]
 
     terminated = found - len(final_main)
-    locked_files = _count_locked_files(project_folder)
+    stale_outputs_found, stale_outputs_removed, stale_output_errors = _remove_stale_output_files(project_folder)
 
     print("========================================")
     print("RUN CLEANUP")
@@ -392,15 +398,14 @@ def _run_cleanup(project_folder):
     print()
     print(f"Previous Optimization Runs Found : {found}")
     print(f"Processes Terminated             : {terminated}")
-    print(f"Locked Files Remaining           : {locked_files}")
+    print(f"Output Files Found               : {stale_outputs_found}")
+    print(f"Output Files Removed             : {stale_outputs_removed}")
+    print(f"Output File Cleanup Errors       : {stale_output_errors}")
     print()
     print("RUN CLEANUP COMPLETE")
 
     if final_main or final_opt:
         raise RuntimeError("Unable to fully terminate prior optimization processes.")
-
-    if locked_files != 0:
-        raise RuntimeError("Locked optimization files remain after cleanup.")
 
 
 def main():
