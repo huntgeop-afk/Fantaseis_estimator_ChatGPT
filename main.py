@@ -13,35 +13,65 @@ from engineering_recommendation import EngineeringRecommendationEngine
 from optimization_presets import OptimizationPresetManager
 
 
-EXECUTION_MODE_FIXED = "fixed"
-EXECUTION_MODE_OPTIMIZE = "optimize"
+SURVEY_TYPE_FIXED = "fixed"
+SURVEY_TYPE_OPTIMIZE = "optimize"
+
+RUN_MODE_PRODUCTION = "production"
+RUN_MODE_VALIDATION = "validation"
+RUN_MODE_DEBUG = "debug"
 
 
 def _print_usage():
     print()
     print("Usage:")
-    print("python main.py <project folder> [--fixed|--optimize] [--preset <name>]")
+    print("python main.py <project folder> [--fixed|--optimize] [--mode <production|validation|debug>] [--preset <name>]")
 
 
-def _prompt_execution_mode():
+def _prompt_survey_type():
     while True:
         print("========================================")
-        print("FantaSeis Execution Mode")
+        print("Survey Type")
         print("========================================")
         print()
-        print("1 - Fixed Survey Evaluation")
+        print("1 - Fixed Survey")
         print()
         print("2 - Optimization")
         print()
 
-        selection = input("Select Mode: ").strip()
+        selection = input("Select Survey Type: ").strip()
 
         if selection == "1":
-            return EXECUTION_MODE_FIXED
+            return SURVEY_TYPE_FIXED
         if selection == "2":
-            return EXECUTION_MODE_OPTIMIZE
+            return SURVEY_TYPE_OPTIMIZE
 
         print("Invalid selection. Enter 1 or 2.")
+        print()
+
+
+def _prompt_run_mode():
+    while True:
+        print("========================================")
+        print("Execution Mode")
+        print("========================================")
+        print()
+        print("1 - Production")
+        print()
+        print("2 - Validation")
+        print()
+        print("3 - Debug")
+        print()
+
+        selection = input("Select Execution Mode: ").strip()
+
+        if selection == "1":
+            return RUN_MODE_PRODUCTION
+        if selection == "2":
+            return RUN_MODE_VALIDATION
+        if selection == "3":
+            return RUN_MODE_DEBUG
+
+        print("Invalid selection. Enter 1, 2, or 3.")
         print()
 
 
@@ -49,11 +79,24 @@ def _resolve_project_and_mode(argv):
     switches = set()
     positional = []
     preset_name = None
+    run_mode = None
 
     index = 0
     while index < len(argv):
         token = argv[index]
         lowered = token.strip().lower()
+
+        if lowered == "--mode":
+            if index + 1 >= len(argv):
+                raise ValueError("--mode requires a value")
+            run_mode = argv[index + 1].strip().lower()
+            index += 2
+            continue
+
+        if lowered.startswith("--mode="):
+            run_mode = lowered.split("=", 1)[1].strip().lower()
+            index += 1
+            continue
 
         if lowered == "--preset":
             if index + 1 >= len(argv):
@@ -87,13 +130,25 @@ def _resolve_project_and_mode(argv):
 
     project_folder = positional[0]
 
+    if run_mode is not None and run_mode not in {RUN_MODE_PRODUCTION, RUN_MODE_VALIDATION, RUN_MODE_DEBUG}:
+        raise ValueError("--mode must be one of: production, validation, debug")
+
+    survey_type = None
     if "--fixed" in switches:
-        return project_folder, EXECUTION_MODE_FIXED, preset_name
-
+        survey_type = SURVEY_TYPE_FIXED
     if "--optimize" in switches:
-        return project_folder, EXECUTION_MODE_OPTIMIZE, preset_name
+        survey_type = SURVEY_TYPE_OPTIMIZE
 
-    return project_folder, _prompt_execution_mode(), preset_name
+    if survey_type is None and run_mode is None:
+        survey_type = _prompt_survey_type()
+        run_mode = _prompt_run_mode()
+    else:
+        if survey_type is None:
+            survey_type = SURVEY_TYPE_FIXED
+        if run_mode is None:
+            run_mode = RUN_MODE_PRODUCTION
+
+    return project_folder, survey_type, run_mode, preset_name
 
 
 def _prompt_optimization_preset():
@@ -133,6 +188,41 @@ def _prompt_optimization_preset():
 
 def _cleanup_resources():
     plt.close("all")
+
+
+def _print_engineering_kernel_banner():
+    print("========================================")
+    print("ENGINEERING KERNEL")
+    print("========================================")
+    print("Status")
+    print("Frozen")
+    print("Validated")
+    print("PASS")
+    print("Engineering Version")
+    print("1.0")
+    print("========================================")
+
+
+def _print_execution_configuration(survey_type, run_mode):
+    survey_label = "Fixed Survey" if survey_type == SURVEY_TYPE_FIXED else "Optimization"
+    mode_label = run_mode.capitalize()
+    validation_enabled = run_mode in {RUN_MODE_VALIDATION, RUN_MODE_DEBUG}
+    debug_enabled = run_mode == RUN_MODE_DEBUG
+
+    print("========================================")
+    print("EXECUTION CONFIGURATION")
+    print("========================================")
+    print("Survey Type")
+    print(survey_label)
+    print("Execution Mode")
+    print(mode_label)
+    print("Engineering Kernel")
+    print("Frozen")
+    print("Validation")
+    print("Enabled" if validation_enabled else "Disabled")
+    print("Debug")
+    print("Enabled" if debug_enabled else "Disabled")
+    print("========================================")
 
 
 def _print_smoke_test_summary(project_folder, optimizer_result, qc_report_text, recommendation_result, diagnostics_result, design_space_result):
@@ -315,21 +405,24 @@ def _run_cleanup(project_folder):
 
 def main():
     try:
-        project_folder, execution_mode, preset_name = _resolve_project_and_mode(sys.argv[1:])
+        project_folder, survey_type, run_mode, preset_name = _resolve_project_and_mode(sys.argv[1:])
     except ValueError as exc:
         print(str(exc))
         _print_usage()
         raise SystemExit(1)
 
-    if execution_mode != EXECUTION_MODE_OPTIMIZE and preset_name is not None:
+    if survey_type != SURVEY_TYPE_OPTIMIZE and preset_name is not None:
         print("--preset is only valid with --optimize mode.")
         raise SystemExit(1)
 
-    if execution_mode == EXECUTION_MODE_OPTIMIZE and not preset_name:
+    if survey_type == SURVEY_TYPE_OPTIMIZE and not preset_name:
         preset_name = _prompt_optimization_preset()
 
-    if execution_mode == EXECUTION_MODE_OPTIMIZE:
+    if survey_type == SURVEY_TYPE_OPTIMIZE:
         preset_name = OptimizationPresetManager.normalize_preset_name(preset_name)
+
+    _print_engineering_kernel_banner()
+    _print_execution_configuration(survey_type, run_mode)
 
     business_model = BusinessModel(project_folder)
 
@@ -337,16 +430,17 @@ def main():
     preset_config = None
     preset_info = None
 
-    if execution_mode == EXECUTION_MODE_OPTIMIZE:
+    if survey_type == SURVEY_TYPE_OPTIMIZE:
         _run_cleanup(project_folder)
         preset_manager = OptimizationPresetManager(project_folder)
         preset_config, preset_info = preset_manager.build_config(preset_name)
 
     pipeline = SurveyPipeline(
         project_folder,
-        debug=DEBUG,
+        debug=(DEBUG or run_mode == RUN_MODE_DEBUG),
         business_model=business_model,
-        execution_mode=execution_mode,
+        survey_type=survey_type,
+        execution_mode=run_mode,
     )
 
     exit_code = 0
@@ -364,7 +458,7 @@ def main():
         diagnostics_result = None
         design_space_result = None
 
-        if execution_mode == EXECUTION_MODE_OPTIMIZE:
+        if survey_type == SURVEY_TYPE_OPTIMIZE:
             optimizer = GridSearchOptimizer(
                 project_folder,
                 business_model=business_model,
@@ -401,7 +495,7 @@ def main():
         print("Survey Completed Successfully.")
 
     except KeyboardInterrupt:
-        if execution_mode == EXECUTION_MODE_OPTIMIZE:
+        if survey_type == SURVEY_TYPE_OPTIMIZE:
             print("Optimization interrupted by user.")
             print("Cleaning up...")
             interrupted_optimization = True

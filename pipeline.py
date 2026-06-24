@@ -34,7 +34,7 @@ from avaz_analysis import AVAzAnalysis
 from illumination_analysis import IlluminationAnalysis
 from center_cmp_validation import CenterCMPValidation
 from survey_qc import SurveyQC
-from fold_audit_validation import FoldAuditValidation
+from validation import EngineeringValidationRunner, DebugTools
 
 from survey_optimizer import SurveyOptimizer
 from optimization_report import OptimizationReport
@@ -68,11 +68,19 @@ class PipelineResults:
 class SurveyPipeline:
     """Orchestrates the end-to-end FantaSeis workflow using existing project modules."""
 
-    def __init__(self, project_folder, debug=DEBUG, business_model=None, execution_mode="optimize"):
+    def __init__(
+        self,
+        project_folder,
+        debug=DEBUG,
+        business_model=None,
+        survey_type="fixed",
+        execution_mode="production",
+    ):
         self.project_folder = Path(project_folder)
         self.show_plots = False
         self.debug = debug
         self.business_model = business_model if business_model is not None else BusinessModel(project_folder)
+        self.survey_type = survey_type
         self.execution_mode = execution_mode
 
     #################################################################
@@ -187,15 +195,19 @@ class SurveyPipeline:
         )
         print(true_fold_summary.summary())
 
-        fold_audit = FoldAuditValidation(
-            cmp_grid=cmp_grid,
-            survey=survey,
-            geometry=geometry,
-            acquisition=acquisition,
-            gis=gis,
-            true_fold_summary=true_fold_summary,
-        )
-        fold_audit.run_all()
+        if self.execution_mode in {"validation", "debug"}:
+            validation_result = EngineeringValidationRunner(
+                cmp_grid=cmp_grid,
+                survey=survey,
+                geometry=geometry,
+                acquisition=acquisition,
+                gis=gis,
+                true_fold_summary=true_fold_summary,
+                debug_mode=(self.execution_mode == "debug"),
+            ).run()
+
+            if self.execution_mode == "debug":
+                DebugTools().run()
 
         self._log("Computing Offset Statistics...")
         offset_analysis = OffsetAnalysis(survey, cmp_grid=cmp_grid)
@@ -241,7 +253,7 @@ class SurveyPipeline:
         optimization_result = None
         report_text = ""
 
-        if self.execution_mode == "optimize":
+        if self.survey_type == "optimize":
             self._log("Evaluating Current Design...")
             optimization_result = self._run_step(
                 "Current design evaluation",
@@ -283,7 +295,7 @@ class SurveyPipeline:
             qc,
         )
 
-        if self.execution_mode == "optimize":
+        if self.survey_type == "optimize":
             self._log("Saving optimization_report.txt")
             self._run_step(
                 "Optimization report write",
