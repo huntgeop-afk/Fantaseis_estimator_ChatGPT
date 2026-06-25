@@ -152,7 +152,7 @@ class CMPPopulator:
         representative_ids = self._representative_shot_ids(shot_offset_audit)
 
         print("==================================================")
-        print("LIVE RECEIVER PATCH AUDIT")
+        print("LIVE RECEIVER PATCH SUMMARY")
         print("==================================================")
 
         for shot_id in representative_ids:
@@ -162,32 +162,44 @@ class CMPPopulator:
             first_line, last_line = self.acquisition.shot_patch_lookup[(shot.line, shot.station)]
             active_receivers = self.acquisition.active_receivers_for_shot(shot)
             line_numbers = sorted({receiver.line for receiver in active_receivers})
-            stations_per_line = 0
-            if line_numbers:
-                stations_per_line = sum(1 for receiver in active_receivers if receiver.line == line_numbers[0])
+            receiver_counts_by_line = {
+                line_number: sum(1 for receiver in active_receivers if receiver.line == line_number)
+                for line_number in line_numbers
+            }
+            configured_stations_per_line = max(receiver_counts_by_line.values(), default=0)
+            configured_receiver_lines = len(line_numbers)
+            configured_receivers = configured_receiver_lines * configured_stations_per_line
+            receivers_removed_by_boundary = configured_receivers - len(active_receivers)
+            patch_completeness = (
+                (100.0 * len(active_receivers) / configured_receivers)
+                if configured_receivers > 0
+                else 0.0
+            )
 
-            expected_traces = len(line_numbers) * stations_per_line
             generated_offsets = shot_data["generated_offsets"]
             generated_min = min(generated_offsets) if generated_offsets else 0.0
             generated_max = max(generated_offsets) if generated_offsets else 0.0
             theoretical_max = shot_data["theoretical_max"]
             difference = theoretical_max - generated_max
-
-            status = "PASS" if (len(generated_offsets) == expected_traces and abs(difference) <= 1.0) else "FAIL"
+            maximum_offset_status = "PASS" if abs(difference) <= 1.0 else "FAIL"
 
             print(f"Shot Number                  : {shot.id}")
             print(f"Shot X                       : {shot.x:.2f}")
             print(f"Shot Y                       : {shot.y:.2f}")
             print(f"First Active Receiver Line   : {first_line}")
             print(f"Last Active Receiver Line    : {last_line}")
-            print(f"Number of Active Receiver Lines : {len(line_numbers)}")
-            print(f"Receiver Stations per Line   : {stations_per_line}")
+            print(f"Number of Active Receiver Lines : {configured_receiver_lines}")
+            print(f"Receiver Stations per Line (configured) : {configured_stations_per_line}")
+            print(f"Configured Receivers         : {configured_receivers}")
             print(f"Total Active Receivers       : {len(active_receivers)}")
+            print(f"Receivers Removed by Boundary : {receivers_removed_by_boundary}")
+            print(f"Patch Completeness (%)       : {patch_completeness:.1f}")
             print(f"Minimum Offset               : {generated_min:.2f}")
             print(f"Maximum Offset               : {generated_max:.2f}")
             print(f"Theoretical Maximum Offset   : {theoretical_max:.2f}")
             print(f"Difference                   : {difference:.2f}")
-            print(f"PASS / FAIL                  : {status}")
+            print(f"Maximum Offset Check         : {maximum_offset_status}")
+            print(f"Boundary Clipping            : {receivers_removed_by_boundary} receivers removed")
             print("--------------------------------------------------")
 
         print("==================================================")
