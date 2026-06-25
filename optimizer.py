@@ -753,11 +753,21 @@ class GridSearchOptimizer:
             live_receiver_nodes,
             logistics_summary.expected_node_rental_days,
         )
+        labor_cost = self.business_model.total_crew_cost(field_days)
+        mobilization_cost = self.business_model.mobilization_cost(gis)
+        hotel_cost = self.business_model.hotel_cost(field_days)
+        per_diem_cost = self.business_model.per_diem_cost(field_days)
+        equipment_cost = self.business_model.total_equipment_cost(field_days)
         cost_summary = CostModel().estimate(
             geometry,
             production_summary,
             logistics_summary,
             node_rental_summary,
+            labor_cost,
+            mobilization_cost,
+            hotel_cost,
+            per_diem_cost,
+            equipment_cost,
         )
 
         offsets = []
@@ -828,7 +838,7 @@ class GridSearchOptimizer:
             required_node_count=live_receiver_nodes,
             node_rental_cost=node_rental_summary.total_node_cost,
             shipping_cost=shipping["selected_shipping_cost"],
-            labor_cost=self.business_model.total_crew_cost(field_days),
+            labor_cost=labor_cost,
             node_rental_days=float(logistics_summary.expected_node_rental_days),
             total_internal_cost=total_internal_cost,
             estimated_client_bid_price=estimated_client_bid_price,

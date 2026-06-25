@@ -376,11 +376,21 @@ class DesignSpaceAnalysis:
                 live_receiver_nodes,
                 logistics_summary.expected_node_rental_days,
             )
+            labor_cost = self.business_model.total_crew_cost(production_summary.critical_path_days)
+            mobilization_cost = self.business_model.mobilization_cost(gis)
+            hotel_cost = self.business_model.hotel_cost(production_summary.critical_path_days)
+            per_diem_cost = self.business_model.per_diem_cost(production_summary.critical_path_days)
+            equipment_cost = self.business_model.total_equipment_cost(production_summary.critical_path_days)
             cost_summary = CostModel().estimate(
                 geometry,
                 production_summary,
                 logistics_summary,
                 node_rental_summary,
+                labor_cost,
+                mobilization_cost,
+                hotel_cost,
+                per_diem_cost,
+                equipment_cost,
             )
             internal_cost = float(
                 cost_summary.total_project_cost

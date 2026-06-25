@@ -10,6 +10,11 @@ class CostSummary:
     field_days: int
     node_rental_cost: float
     logistics_cost: float
+    labor_cost: float
+    mobilization_cost: float
+    hotel_cost: float
+    per_diem_cost: float
+    equipment_cost: float
     total_project_cost: float
 
     #################################################################
@@ -22,6 +27,11 @@ class CostSummary:
             f"Field Days : {self.field_days}",
             f"Node Rental Cost : ${self.node_rental_cost:.2f}",
             f"Logistics Cost : ${self.logistics_cost:.2f}",
+            f"Labor Cost : ${self.labor_cost:.2f}",
+            f"Mobilization Cost : ${self.mobilization_cost:.2f}",
+            f"Hotel Cost : ${self.hotel_cost:.2f}",
+            f"Per Diem Cost : ${self.per_diem_cost:.2f}",
+            f"Equipment Cost : ${self.equipment_cost:.2f}",
             "--------------------------------",
             f"Total Project Cost : ${self.total_project_cost:.2f}",
         ])
@@ -41,6 +51,11 @@ class CostModel:
         production_summary,
         logistics_summary,
         node_rental_summary,
+        labor_cost,
+        mobilization_cost,
+        hotel_cost,
+        per_diem_cost,
+        equipment_cost,
     ):
         receiver_nodes = self._live_receiver_nodes(geometry)
         shots = geometry.shot_count
@@ -48,7 +63,15 @@ class CostModel:
         node_rental_cost = node_rental_summary.total_node_cost
         logistics_cost = logistics_summary.total_logistics_cost
 
-        total_project_cost = node_rental_cost + logistics_cost
+        total_project_cost = (
+            node_rental_cost
+            + logistics_cost
+            + float(labor_cost)
+            + float(mobilization_cost)
+            + float(hotel_cost)
+            + float(per_diem_cost)
+            + float(equipment_cost)
+        )
 
         return CostSummary(
             receiver_nodes=receiver_nodes,
@@ -56,6 +79,11 @@ class CostModel:
             field_days=field_days,
             node_rental_cost=node_rental_cost,
             logistics_cost=logistics_cost,
+            labor_cost=float(labor_cost),
+            mobilization_cost=float(mobilization_cost),
+            hotel_cost=float(hotel_cost),
+            per_diem_cost=float(per_diem_cost),
+            equipment_cost=float(equipment_cost),
             total_project_cost=total_project_cost,
         )
 

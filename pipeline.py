@@ -148,6 +148,11 @@ class SurveyPipeline:
         )
 
         self._log("Running Cost Model...")
+        labor_cost = self.business_model.total_crew_cost(production_summary.critical_path_days)
+        mobilization_cost = self.business_model.mobilization_cost(gis)
+        hotel_cost = self.business_model.hotel_cost(production_summary.critical_path_days)
+        per_diem_cost = self.business_model.per_diem_cost(production_summary.critical_path_days)
+        equipment_cost = self.business_model.total_equipment_cost(production_summary.critical_path_days)
         cost_summary = self._run_step(
             "Cost model",
             lambda: CostModel().estimate(
@@ -155,6 +160,11 @@ class SurveyPipeline:
                 production_summary,
                 logistics_summary,
                 node_rental_summary,
+                labor_cost,
+                mobilization_cost,
+                hotel_cost,
+                per_diem_cost,
+                equipment_cost,
             ),
         )
 
