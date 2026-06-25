@@ -21,7 +21,6 @@ from cost_model import CostModel
 from cmp_analysis import CMPAnalysis
 from cmp_populator import CMPPopulator
 from plotting import Plotter
-from fold_heatmap import FoldHeatMap
 from offset_heatmap import OffsetHeatMap
 from azimuth_rose import AzimuthRose
 
@@ -201,7 +200,11 @@ class SurveyPipeline:
         self._log("Computing Fold...")
         true_fold_summary = self._run_step(
             "True fold analysis",
-            lambda: TrueFoldAnalysis(cmp_grid, survey.target_depth, 40.0).analyze(),
+            lambda: TrueFoldAnalysis(
+                cmp_grid,
+                survey.target_depth,
+                survey.maximum_incidence_angle,
+            ).analyze(),
         )
         print(true_fold_summary.summary())
 
@@ -297,6 +300,7 @@ class SurveyPipeline:
         offset_analysis = OffsetAnalysis(survey, cmp_grid=cmp_grid)
         self._generate_figures(
             results_dir,
+            survey,
             gis,
             geometry,
             cmp_grid,
@@ -376,18 +380,12 @@ class SurveyPipeline:
 
     #################################################################
 
-    def _generate_figures(self, results_dir, gis, geometry, cmp_grid, offset_analysis, center_cmp_validation, qc):
+    def _generate_figures(self, results_dir, survey, gis, geometry, cmp_grid, offset_analysis, center_cmp_validation, qc):
         plotter = Plotter(gis, geometry, cmp_grid)
 
         self._run_step(
             "Geometry figure generation",
             lambda: plotter.plot_geometry(save_path=results_dir / "geometry.png"),
-        )
-
-        self._save_figure(
-            "fold_heatmap",
-            results_dir / "fold_heatmap.png",
-            lambda: FoldHeatMap(cmp_grid, gis).plot(),
         )
 
         self._save_figure(

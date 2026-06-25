@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -16,13 +18,13 @@ class SurveyQC:
     #################################################################
 
     def generate_fold_map(self, save_path=None):
-        """Render and optionally save a fold heatmap from populated CMP trace counts."""
+        """Render and optionally save usable CMP fold after incidence-angle filtering."""
         data, extent = self._build_metric_matrix(self._fold_value)
         return self._render_map(
             data,
             extent,
-            title="CMP Fold Map",
-            colorbar_label="Fold",
+            title="Usable CMP Fold Map",
+            colorbar_label="Usable Fold",
             cmap_name="viridis",
             save_path=save_path,
         )
@@ -136,7 +138,12 @@ class SurveyQC:
     #################################################################
 
     def _fold_value(self, bin_record):
-        return int(getattr(bin_record, "trace_count", 0))
+        usable_count = 0
+        for trace in getattr(bin_record, "traces", []):
+            if self._incidence_angle(trace.offset) > float(self.survey.maximum_incidence_angle):
+                continue
+            usable_count += 1
+        return usable_count
 
     #################################################################
 
@@ -153,3 +160,11 @@ class SurveyQC:
         if not traces:
             return np.nan
         return min(trace.offset for trace in traces)
+
+    #################################################################
+
+    def _incidence_angle(self, offset):
+        target_depth = float(getattr(self.survey, "target_depth", 0.0) or 0.0)
+        if target_depth <= 0.0:
+            return 0.0
+        return math.degrees(math.atan(float(offset) / (2.0 * target_depth)))

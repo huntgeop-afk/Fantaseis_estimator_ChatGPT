@@ -699,7 +699,7 @@ class GridSearchOptimizer:
         fold_summary = TrueFoldAnalysis(
             cmp_grid,
             survey_candidate.target_depth,
-            40.0,
+            survey_candidate.maximum_incidence_angle,
         ).analyze()
         ava_summary = AVAAnalysis(
             cmp_grid,

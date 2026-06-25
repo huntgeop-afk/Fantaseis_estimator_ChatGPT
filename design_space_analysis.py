@@ -292,7 +292,11 @@ class DesignSpaceAnalysis:
             if "true_fold" not in state:
                 state["true_fold"] = self._timed_call(
                     "true_fold_seconds",
-                    lambda: TrueFoldAnalysis(cmp_grid, survey.target_depth, 40.0).analyze(),
+                    lambda: TrueFoldAnalysis(
+                        cmp_grid,
+                        survey.target_depth,
+                        survey.maximum_incidence_angle,
+                    ).analyze(),
                 )
             return state["true_fold"]
 
