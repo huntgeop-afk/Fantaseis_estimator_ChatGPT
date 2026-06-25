@@ -45,6 +45,13 @@ class LogisticsSummary:
 
     shipping_weight_kg: float
     pallet_count: int
+    outbound_shipping_distance_miles: float
+    return_shipping_distance_miles: float
+    shipping_distance_miles: float
+    effective_shipping_rate_per_lb: float
+    outbound_shipping_cost: float
+    return_shipping_cost: float
+    shipping_cost: float
     expected_outbound_days: float
     expected_return_days: float
     expected_total_transit_days: float
@@ -62,6 +69,13 @@ class LogisticsSummary:
             "",
             f"Shipping Weight (kg): {self.shipping_weight_kg:.2f}",
             f"Pallet Count: {self.pallet_count}",
+            f"Outbound Shipping Distance (miles): {self.outbound_shipping_distance_miles:.2f}",
+            f"Return Shipping Distance (miles): {self.return_shipping_distance_miles:.2f}",
+            f"Shipping Distance (miles): {self.shipping_distance_miles:.2f}",
+            f"Effective Shipping Rate ($/lb): {self.effective_shipping_rate_per_lb:.4f}",
+            f"Outbound Shipping Cost: {self.outbound_shipping_cost:.2f}",
+            f"Return Shipping Cost: {self.return_shipping_cost:.2f}",
+            f"Total Shipping Cost: {self.shipping_cost:.2f}",
             "",
             f"Expected Outbound Days: {self.expected_outbound_days:.2f}",
             f"Expected Return Days: {self.expected_return_days:.2f}",
@@ -89,6 +103,13 @@ class LogisticsModel:
         shipping_weight_lb = float(shipping_details.get("total_weight_lb", 0.0))
         shipping_weight_kg = shipping_weight_lb * 0.45359237
         pallet_count = int(shipping_details.get("pallet_count", 0))
+        outbound_shipping_distance_miles = float(shipping_details.get("commercial_outbound_distance_miles", 0.0))
+        return_shipping_distance_miles = float(shipping_details.get("commercial_return_distance_miles", 0.0))
+        shipping_distance_miles = float(shipping_details.get("shipping_distance_miles", 0.0))
+        effective_shipping_rate_per_lb = float(shipping_details.get("effective_shipping_rate_per_lb", 0.0))
+        outbound_shipping_cost = float(shipping_details.get("commercial_outbound_cost", 0.0))
+        return_shipping_cost = float(shipping_details.get("commercial_return_cost", 0.0))
+        shipping_cost = float(shipping_details.get("commercial_shipping_cost", 0.0))
 
         expected_outbound_days = self._triangular_expected(
             self.scenario.outbound_days_min,
@@ -113,6 +134,13 @@ class LogisticsModel:
         return LogisticsSummary(
             shipping_weight_kg=shipping_weight_kg,
             pallet_count=pallet_count,
+            outbound_shipping_distance_miles=outbound_shipping_distance_miles,
+            return_shipping_distance_miles=return_shipping_distance_miles,
+            shipping_distance_miles=shipping_distance_miles,
+            effective_shipping_rate_per_lb=effective_shipping_rate_per_lb,
+            outbound_shipping_cost=outbound_shipping_cost,
+            return_shipping_cost=return_shipping_cost,
+            shipping_cost=shipping_cost,
             expected_outbound_days=expected_outbound_days,
             expected_return_days=expected_return_days,
             expected_total_transit_days=expected_total_transit_days,

@@ -47,8 +47,14 @@ DEFAULT_BUSINESS_CONFIG = {
         "node_weight_lb": 2.205,
         "pallet_weight_lb": 77.16,
         "maximum_payload_per_pallet_lb": 1102.31,
-        "commercial_shipping_cost_per_pound": 0.28,
         "commercial_shipping_days": 2.0,
+    },
+    "shipping": {
+        "mode": "ltl",
+        "freight_class": 70,
+        "reference_distance_miles": 250,
+        "rate_per_pound_at_reference_distance": 0.18,
+        "distance_rate_per_pound_per_mile": 0.00020,
     },
     "owner_transport": {
         "enabled": True,
@@ -148,8 +154,16 @@ class NodeLogisticsBusiness:
     node_weight_lb: float
     pallet_weight_lb: float
     maximum_payload_per_pallet_lb: float
-    commercial_shipping_cost_per_pound: float
     commercial_shipping_days: float
+
+
+@dataclass(frozen=True)
+class ShippingBusiness:
+    mode: str
+    freight_class: int
+    reference_distance_miles: float
+    rate_per_pound_at_reference_distance: float
+    distance_rate_per_pound_per_mile: float
 
 
 @dataclass(frozen=True)
@@ -190,6 +204,7 @@ class BusinessModel:
         self.travel = TravelBusiness(**self.config["travel"])
         self.equipment = EquipmentBusiness(**self.config["equipment"])
         self.node_logistics = NodeLogisticsBusiness(**self.config["node_logistics"])
+        self.shipping = ShippingBusiness(**self.config["shipping"])
         self.owner_transport = OwnerTransportBusiness(**self.config["owner_transport"])
         self.pricing = PricingBusiness(**self.config["pricing"])
 
@@ -197,25 +212,34 @@ class BusinessModel:
 
     def _load_or_create_config(self):
         if not self.business_path.exists():
-            with open(self.business_path, "w", encoding="utf-8", newline="\n") as stream:
-                stream.write(json.dumps(DEFAULT_BUSINESS_CONFIG, indent=2))
-                stream.flush()
-                os.fsync(stream.fileno())
+            self._write_config(DEFAULT_BUSINESS_CONFIG)
 
         with open(self.business_path, "r", encoding="utf-8") as stream:
-            config = json.load(stream)
+            original_config = json.load(stream)
 
-        return self._normalize_config(config)
+        normalized_config = self._normalize_config(original_config)
+        if normalized_config != original_config:
+            self._write_config(normalized_config)
+
+        return normalized_config
+
+    #################################################################
+
+    def _write_config(self, config):
+        with open(self.business_path, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(json.dumps(config, indent=2))
+            stream.flush()
+            os.fsync(stream.fileno())
 
     #################################################################
 
     def _normalize_config(self, config):
         normalized = json.loads(json.dumps(config))
+        legacy_node = normalized.get("node_logistics", {})
 
         if "owner_transport" not in normalized:
-            legacy = normalized.get("node_logistics", {})
             normalized["owner_transport"] = {
-                "enabled": bool(legacy.get("owner_pickup_enabled", True) or legacy.get("owner_return_enabled", True)),
+                "enabled": bool(legacy_node.get("owner_pickup_enabled", True) or legacy_node.get("owner_return_enabled", True)),
                 "compensation_per_mile": 1.50,
                 "drivers": 2,
                 "vendor_city": "Houston",
@@ -225,14 +249,31 @@ class BusinessModel:
             }
 
         node_defaults = DEFAULT_BUSINESS_CONFIG["node_logistics"]
-        normalized_node = normalized.get("node_logistics", {})
         normalized["node_logistics"] = {
-            "node_rental_per_node_day": normalized_node.get("node_rental_per_node_day", node_defaults["node_rental_per_node_day"]),
-            "node_weight_lb": normalized_node.get("node_weight_lb", node_defaults["node_weight_lb"]),
-            "pallet_weight_lb": normalized_node.get("pallet_weight_lb", node_defaults["pallet_weight_lb"]),
-            "maximum_payload_per_pallet_lb": normalized_node.get("maximum_payload_per_pallet_lb", node_defaults["maximum_payload_per_pallet_lb"]),
-            "commercial_shipping_cost_per_pound": normalized_node.get("commercial_shipping_cost_per_pound", node_defaults["commercial_shipping_cost_per_pound"]),
-            "commercial_shipping_days": normalized_node.get("commercial_shipping_days", node_defaults["commercial_shipping_days"]),
+            "node_rental_per_node_day": legacy_node.get("node_rental_per_node_day", node_defaults["node_rental_per_node_day"]),
+            "node_weight_lb": legacy_node.get("node_weight_lb", node_defaults["node_weight_lb"]),
+            "pallet_weight_lb": legacy_node.get("pallet_weight_lb", node_defaults["pallet_weight_lb"]),
+            "maximum_payload_per_pallet_lb": legacy_node.get("maximum_payload_per_pallet_lb", node_defaults["maximum_payload_per_pallet_lb"]),
+            "commercial_shipping_days": legacy_node.get("commercial_shipping_days", node_defaults["commercial_shipping_days"]),
+        }
+
+        shipping_defaults = DEFAULT_BUSINESS_CONFIG["shipping"]
+        normalized_shipping = normalized.get("shipping", {})
+        normalized["shipping"] = {
+            "mode": normalized_shipping.get("mode", shipping_defaults["mode"]),
+            "freight_class": normalized_shipping.get("freight_class", shipping_defaults["freight_class"]),
+            "reference_distance_miles": normalized_shipping.get(
+                "reference_distance_miles",
+                shipping_defaults["reference_distance_miles"],
+            ),
+            "rate_per_pound_at_reference_distance": normalized_shipping.get(
+                "rate_per_pound_at_reference_distance",
+                shipping_defaults["rate_per_pound_at_reference_distance"],
+            ),
+            "distance_rate_per_pound_per_mile": normalized_shipping.get(
+                "distance_rate_per_pound_per_mile",
+                shipping_defaults["distance_rate_per_pound_per_mile"],
+            ),
         }
 
         owner_defaults = DEFAULT_BUSINESS_CONFIG["owner_transport"]
@@ -259,6 +300,7 @@ class BusinessModel:
             "travel",
             "equipment",
             "node_logistics",
+            "shipping",
             "owner_transport",
             "pricing",
         ]
@@ -272,11 +314,25 @@ class BusinessModel:
         self._require_non_negative(config["crew"]["traffic_control_personnel"], "traffic_control_personnel")
         self._require_positive(config["mobilization"]["mileage_rate_per_mile"], "mileage_rate_per_mile")
         self._require_positive(config["mobilization"]["road_factor"], "road_factor")
+        self._require_positive(config["shipping"]["freight_class"], "shipping.freight_class")
+        self._require_positive(config["shipping"]["reference_distance_miles"], "shipping.reference_distance_miles")
+        self._require_non_negative(
+            config["shipping"]["rate_per_pound_at_reference_distance"],
+            "shipping.rate_per_pound_at_reference_distance",
+        )
+        self._require_non_negative(
+            config["shipping"]["distance_rate_per_pound_per_mile"],
+            "shipping.distance_rate_per_pound_per_mile",
+        )
         self._require_positive(config["owner_transport"]["compensation_per_mile"], "compensation_per_mile")
         self._require_positive(config["owner_transport"]["drivers"], "owner_transport.drivers")
         self._require_positive(config["travel"]["hotel_rooms_per_person"], "hotel_rooms_per_person")
         self._require_non_negative(config["travel"]["hotel_cost_per_room"], "hotel_cost_per_room")
         self._require_non_negative(config["travel"]["per_diem_per_contractor_per_day"], "per_diem_per_contractor_per_day")
+
+        shipping_mode = str(config["shipping"].get("mode", "")).strip().lower()
+        if shipping_mode != "ltl":
+            raise ValueError("shipping.mode must be 'ltl'")
 
         pricing_method = str(config["pricing"].get("method", "")).strip()
         if pricing_method not in {"desired_profit_margin", "markup_percentage"}:
@@ -392,7 +448,43 @@ class BusinessModel:
         pallet_count = math.ceil((nodes * self.node_logistics.node_weight_lb) / self.node_logistics.maximum_payload_per_pallet_lb)
         total_weight_lb = nodes * self.node_logistics.node_weight_lb + pallet_count * self.node_logistics.pallet_weight_lb
 
-        commercial_cost = total_weight_lb * self.node_logistics.commercial_shipping_cost_per_pound
+        project_lat, project_lon = self._survey_centroid_lat_lon(gis_project)
+        vendor_lat, vendor_lon = self._city_state_lat_lon(
+            self.owner_transport.vendor_city,
+            self.owner_transport.vendor_state,
+        )
+
+        commercial_outbound_distance_miles = (
+            self._haversine_miles(vendor_lat, vendor_lon, project_lat, project_lon)
+            * self.mobilization.road_factor
+        )
+        commercial_return_distance_miles = commercial_outbound_distance_miles
+        shipping_distance_miles = (
+            commercial_outbound_distance_miles + commercial_return_distance_miles
+        )
+
+        outbound_distance_markup_miles = max(
+            0.0,
+            commercial_outbound_distance_miles - self.shipping.reference_distance_miles,
+        )
+        outbound_shipping_rate_per_lb = (
+            self.shipping.rate_per_pound_at_reference_distance
+            + outbound_distance_markup_miles * self.shipping.distance_rate_per_pound_per_mile
+        )
+        return_distance_markup_miles = max(
+            0.0,
+            commercial_return_distance_miles - self.shipping.reference_distance_miles,
+        )
+        return_shipping_rate_per_lb = (
+            self.shipping.rate_per_pound_at_reference_distance
+            + return_distance_markup_miles * self.shipping.distance_rate_per_pound_per_mile
+        )
+        commercial_outbound_cost = total_weight_lb * outbound_shipping_rate_per_lb
+        commercial_return_cost = total_weight_lb * return_shipping_rate_per_lb
+        commercial_cost = commercial_outbound_cost + commercial_return_cost
+        effective_shipping_rate_per_lb = (
+            0.0 if total_weight_lb <= 0.0 else commercial_cost / total_weight_lb
+        )
 
         owner_pickup_distance_miles = 0.0
         owner_return_distance_miles = 0.0
@@ -405,11 +497,6 @@ class BusinessModel:
                 self.owner_transport.pickup_origin_city,
                 self.owner_transport.pickup_origin_state,
             )
-            vendor_lat, vendor_lon = self._city_state_lat_lon(
-                self.owner_transport.vendor_city,
-                self.owner_transport.vendor_state,
-            )
-            project_lat, project_lon = self._survey_centroid_lat_lon(gis_project)
 
             owner_pickup_distance_miles = (
                 self._haversine_miles(origin_lat, origin_lon, vendor_lat, vendor_lon)
@@ -448,6 +535,17 @@ class BusinessModel:
         return {
             "pallet_count": int(pallet_count),
             "total_weight_lb": total_weight_lb,
+            "shipping_mode": self.shipping.mode,
+            "freight_class": int(self.shipping.freight_class),
+            "shipping_distance_miles": shipping_distance_miles,
+            "commercial_outbound_distance_miles": commercial_outbound_distance_miles,
+            "commercial_return_distance_miles": commercial_return_distance_miles,
+            "commercial_outbound_cost": commercial_outbound_cost,
+            "commercial_return_cost": commercial_return_cost,
+            "reference_distance_miles": float(self.shipping.reference_distance_miles),
+            "rate_per_pound_at_reference_distance": float(self.shipping.rate_per_pound_at_reference_distance),
+            "distance_rate_per_pound_per_mile": float(self.shipping.distance_rate_per_pound_per_mile),
+            "effective_shipping_rate_per_lb": effective_shipping_rate_per_lb,
             "commercial_shipping_cost": commercial_cost,
             "commercial_shipping_days": self.node_logistics.commercial_shipping_days,
             "owner_pickup_distance_miles": owner_pickup_distance_miles,
@@ -534,6 +632,19 @@ class BusinessModel:
             f"Shipping Weight (kg)          : {shipping['total_weight_lb'] * 0.45359237:.2f}",
             f"Pallet Count                  : {shipping['pallet_count']}",
             f"Node Rental Cost              : ${self.node_rental_cost(receiver_nodes, node_rental_days):.2f}",
+            "Commercial Shipping Assumptions",
+            f"Shipping Mode                 : {shipping['shipping_mode']}",
+            f"Freight Class                 : {shipping['freight_class']}",
+            f"Outbound Shipping Distance    : {shipping['commercial_outbound_distance_miles']:.2f} miles",
+            f"Return Shipping Distance      : {shipping['commercial_return_distance_miles']:.2f} miles",
+            f"Total Shipping Distance       : {shipping['shipping_distance_miles']:.2f} miles",
+            f"Reference Distance            : {shipping['reference_distance_miles']:.2f} miles",
+            f"Reference Rate                : ${shipping['rate_per_pound_at_reference_distance']:.4f}/lb",
+            f"Distance Rate Increment       : ${shipping['distance_rate_per_pound_per_mile']:.5f}/lb/mile",
+            f"Effective Shipping Rate       : ${shipping['effective_shipping_rate_per_lb']:.4f}/lb",
+            f"Outbound Shipping Cost        : ${shipping['commercial_outbound_cost']:.2f}",
+            f"Return Shipping Cost          : ${shipping['commercial_return_cost']:.2f}",
+            f"Total Shipping Cost           : ${shipping['commercial_shipping_cost']:.2f}",
             "Owner Transportation",
             f"Drivers                       : {shipping['owner_drivers']}",
             f"Mileage Rate                  : ${shipping['owner_compensation_per_mile']:.2f}/mile",
