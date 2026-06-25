@@ -2,6 +2,7 @@ import sys
 import os
 from pathlib import Path
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 from pipeline import SurveyPipeline
 from qc_report import QCReport
 from config import DEBUG
@@ -188,6 +189,45 @@ def _prompt_optimization_preset():
 
 def _cleanup_resources():
     plt.close("all")
+
+
+def _export_qc_report_pdf(project_folder, qc_report_text):
+    results_dir = Path(project_folder) / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = results_dir / "qc_report.pdf"
+
+    lines = qc_report_text.splitlines()
+    if not lines:
+        lines = [""]
+
+    lines_per_page = 60
+    font_size = 9
+    line_height = 0.015
+
+    with PdfPages(pdf_path) as pdf:
+        for start in range(0, len(lines), lines_per_page):
+            page_lines = lines[start:start + lines_per_page]
+            figure = plt.figure(figsize=(8.5, 11))
+            axis = figure.add_axes([0, 0, 1, 1])
+            axis.axis("off")
+
+            y = 0.98
+            for line in page_lines:
+                axis.text(
+                    0.04,
+                    y,
+                    line,
+                    ha="left",
+                    va="top",
+                    family="monospace",
+                    fontsize=font_size,
+                )
+                y -= line_height
+
+            pdf.savefig(figure)
+            plt.close(figure)
+
+    return pdf_path
 
 
 def _print_engineering_kernel_banner():
@@ -457,6 +497,8 @@ def main():
         print("Generating QC Report...")
         qc_report_text = QCReport(results).generate()
         print(qc_report_text, end="")
+        qc_report_pdf_path = _export_qc_report_pdf(project_folder, qc_report_text)
+        print(f"QC Report PDF Exported: {qc_report_pdf_path}")
 
         optimizer_result = None
         recommendation_result = None
